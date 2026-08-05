@@ -56,10 +56,13 @@ Deno.serve(async (req) => {
   };
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
   try {
-    const { mode, log, wave, budget, prevMutation, sessionId, runSummary } = await req.json();
+    const { mode, log, wave, budget, prevMutation, sessionId, runSummary, warmup } = await req.json();
     const used = sessionCounts.get(sessionId) ?? 0;
-    if (used >= MAX_CALLS_PER_SESSION || overDailyCap()) return new Response(JSON.stringify({ error: 'cap' }), { status: 429, headers: cors });
-    sessionCounts.set(sessionId, used + 1);
+    // warmup(타이틀 사전 호출)은 세션 상한에 산입하지 않는다 — 단, 남용 방지를 위해 일일 캡 검사(overDailyCap)는
+    // warmup도 동일하게 받는다(스펙 3.4 amendment). 세션 캡에 이미 걸린 실호출은 기존과 동일하게 일일 카운터를 소비하지 않는다.
+    const overSessionCap = !warmup && used >= MAX_CALLS_PER_SESSION;
+    if (overSessionCap || overDailyCap()) return new Response(JSON.stringify({ error: 'cap' }), { status: 429, headers: cors });
+    if (!warmup) sessionCounts.set(sessionId, used + 1);
 
     if (mode === 'report') {
       const msg = await client.messages.create({

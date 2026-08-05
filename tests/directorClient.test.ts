@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { requestDirective } from '../src/director/client';
+import { requestDirective, warmUpDirector } from '../src/director/client';
 
 const okDirective = {
   composition: [{ type: 'chaser', count: 5, spawn: 'N', elite: false }],
@@ -36,5 +36,21 @@ describe('requestDirective', () => {
     const r = await p;
     expect(r.fromLLM).toBe(false);
     vi.useRealTimers();
+  });
+});
+
+describe('warmUpDirector', () => {
+  it('mode:directive + warmup:true로 발사하고 응답을 기다리지 않는다(동기 반환)', () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ directive: okDirective })));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(() => warmUpDirector()).not.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.mode).toBe('directive');
+    expect(body.warmup).toBe(true);
+  });
+  it('네트워크 오류가 나도 예외를 던지지 않는다(무음 실패)', () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('down'); }));
+    expect(() => warmUpDirector()).not.toThrow();
   });
 });

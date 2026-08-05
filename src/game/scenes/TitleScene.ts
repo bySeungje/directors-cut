@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { resumeAudio } from '../sound';
+import { warmUpDirector } from '../../director/client';
 
 // 시안 v1 SCREEN 01 좌표(1:1) — 레드 D 뱃지 + NAN 2026 라벨은 캔버스 절대좌표라 스케일 무관하게 그대로 재사용.
 const BADGE_X = 20;
@@ -21,6 +22,8 @@ export class TitleScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+
+    warmUpDirector(); // 프록시·모델 콜드스타트를 미리 데운다(스펙 3.4 amendment) — 결과를 기다리지 않고 게임 시작을 막지 않음
 
     this.renderTitleWithCutmark(width, height / 2 - 50);
     this.renderDirectorBadge();
