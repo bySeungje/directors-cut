@@ -24,6 +24,7 @@ const ENEMY_COLOR = 0x9a9aa8;
 const ELITE_COLOR = 0xff2d2d;
 const ELITE_SCALE = 1.4;
 const ELITE_HP_MULT = 3;
+const ELITE_SPEED_MULT = 1.15; // 스펙 3.3 "이속 소폭↑" — 브리프 누락분 반영(Task 10 밸런싱에서 조정 가능)
 
 const PLAYER_TEX = 'player';
 const PLAYER_TEX_SIZE = 40;
@@ -306,7 +307,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setCircle(def.size, off, off);
 
     this.hp = opts?.hpOverride ?? (elite ? def.hp * ELITE_HP_MULT : def.hp);
-    this.moveSpeed = def.speed;
+    this.moveSpeed = elite ? def.speed * ELITE_SPEED_MULT : def.speed;
     this.setTint(elite ? ELITE_COLOR : 0xffffff);
     this.setAlpha(1);
 
