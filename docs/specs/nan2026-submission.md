@@ -109,7 +109,7 @@
 
 ## 4. 아키텍처
 
-- **클라이언트:** Phaser 3 + TypeScript + Vite. 정적 빌드 → GitHub Actions로 Pages 배포(push 시 자동). 프론트에 API 키 없음.
+- **클라이언트:** Phaser 4 + TypeScript + Vite. *(표기 정정 2026-08-05: 설치·검증된 실버전은 Phaser 4.x — 초안의 "Phaser 3"는 표기 오류)* 정적 빌드 → GitHub Actions로 Pages 배포(push 시 자동). 프론트에 API 키 없음.
 - **프록시:** Supabase Edge Function `director` 1개. 역할: Anthropic API 호출(모델 claude-haiku-4-5, max_tokens 제한), 시스템 프롬프트·어휘 정의 서버측 보관, **세션당 호출 상한 20회(약 3런 분량, 초과 시 무음 폴백) + 일일 예산 캡(값은 플랜에서 확정)**, CORS는 Pages 도메인만 허용. 구현 시 `claude-api` 스킬 로드 후 최신 모델·파라미터 확정.
 - **모듈 경계:** `engine`(Phaser 씬·엔티티·웨이브 실행기 — 디렉티브만 소비) / `telemetry`(로그 집계) / `director-client`(프록시 호출·검증·폴백 뱅크) / `ui`(인터벌·리포트). engine은 director-client의 내부를 모른다 — 디렉티브 스키마가 유일한 계약(contract-first).
 - **테스트·하네스:** `scripts/ai_harness.sh` (HARNESS_CONTRACT 규약: `--fast` = tsc+lint+unit, `--full` = +빌드). 유닛 대상: 디렉티브 검증기·예산 규칙·폴백 선택기·로그 집계기(전투 로직은 수동 플레이 검증).

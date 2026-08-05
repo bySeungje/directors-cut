@@ -4,9 +4,9 @@
 
 **Goal:** 플레이어를 읽고 판을 다시 짜는 AI 디렉터와 싸우는 웹 서바이벌 게임을 8/10 제출 가능 상태로 완성한다 (Pages 배포 + 영상 + 문서).
 
-**Architecture:** Phaser 3 아케이드 엔진이 "디렉티브"(제한된 JSON 어휘)만 소비하는 결정론 실행기. LLM(디렉터)은 Supabase Edge Function 프록시 뒤에서 디렉티브를 생성하고, 검증 실패·지연 시 사전 제작 뱅크로 무음 폴백. **폴백 뱅크를 먼저 만들어 LLM 없이도 게임이 완주 가능하게 한 뒤** LLM을 얹는다.
+**Architecture:** Phaser 4 아케이드 엔진이 "디렉티브"(제한된 JSON 어휘)만 소비하는 결정론 실행기. LLM(디렉터)은 Supabase Edge Function 프록시 뒤에서 디렉티브를 생성하고, 검증 실패·지연 시 사전 제작 뱅크로 무음 폴백. **폴백 뱅크를 먼저 만들어 LLM 없이도 게임이 완주 가능하게 한 뒤** LLM을 얹는다.
 
-**Tech Stack:** Phaser 3 + TypeScript + Vite / vitest / zod / Supabase Edge Function (Deno) + `@anthropic-ai/sdk` / GitHub Actions → Pages / zzfx(사운드)
+**Tech Stack:** Phaser 4 + TypeScript + Vite / vitest / zod / Supabase Edge Function (Deno) + `@anthropic-ai/sdk` / GitHub Actions → Pages / zzfx(사운드)
 
 ## Global Constraints (스펙에서 발췌 — 모든 태스크에 적용)
 
