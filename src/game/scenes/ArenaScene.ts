@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
-import { EnemyType } from '../../contracts/directive';
-import { OPENING_WAVE } from '../../director/fallbackBank';
+import { Directive, EnemyType, Mutation, WaveLog } from '../../contracts/directive';
+import { OPENING_WAVE, pickFallback } from '../../director/fallbackBank';
 import { WaveTelemetry } from '../../telemetry/collector';
 import { Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures } from '../entities';
+import { runDirective } from '../waveRunner';
+import { clearMutation, updateMutation } from '../mutations';
 
 const STRESS_TYPES: EnemyType[] = ['chaser', 'shooter', 'splitter'];
 
@@ -12,6 +14,15 @@ const SPLITTER_MINI_SCALE = 0.6;
 
 const HUD_DEPTH = 1000;
 
+// Step 3: "지금은 2초 대기 placeholder" — Task 8이 대사·업그레이드 연출로 교체 예정
+const INTERVAL_MS = 2000;
+const FINAL_WAVE = 7;
+
+/** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true */
+function isGodMode(): boolean {
+  return (window as unknown as { __god?: boolean }).__god === true;
+}
+
 export class ArenaScene extends Phaser.Scene {
   player!: Player;
   enemies!: Phaser.Physics.Arcade.Group;
@@ -19,13 +30,28 @@ export class ArenaScene extends Phaser.Scene {
   /** Task 6이 wave-cleared 이후 finish()를 호출할 수 있도록 공개 */
   telemetry!: WaveTelemetry;
 
+  /** Task 7이 디렉터 호출에 쓴다(런 전체 웨이브 로그 누적) */
+  waveLogs: WaveLog[] = [];
+  /** Task 7·8이 소비 — 현재 진행 중인 웨이브 번호(1-indexed) */
+  currentWave = 1;
+  /** Task 7이 소비 — 가장 최근에 완료된 웨이브의 mutation(다음 pickFallback 호출에 씀) */
+  prevMutation: Mutation = 'NONE';
+
   private playerBullets!: Phaser.Physics.Arcade.Group;
   private enemyBullets!: Phaser.Physics.Arcade.Group;
 
-  private waveNumber = 1;
   private playerDead = false;
   private waveClearedEmitted = false;
   private enemiesSpawned = false;
+  private runEnded = false;
+
+  /** 현재 진행 중인 웨이브의 mutation — 웨이브 종료 시 prevMutation/mutationHistory로 이관 */
+  private activeMutation: Mutation = 'NONE';
+  private mutationHistory: Mutation[] = [];
+  private waveStartAt = 0;
+  /** telemetry.finish()의 hpLost는 damageSources(적 타입별) 합산이라 LAVA/SHRINK 같은 mutation 피해를 못 잡는다 —
+   *  실제 피격 발생 횟수를 별도로 세어 WaveLog.hpLost를 보정한다. */
+  private hpLostThisWave = 0;
 
   private waveText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
@@ -44,7 +70,6 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
-    this.telemetry = new WaveTelemetry();
     this.player.onDash = () => this.telemetry.recordDash();
 
     this.physics.add.overlap(this.playerBullets, this.enemies, this.handlePlayerBulletHitEnemy, undefined, this);
@@ -52,14 +77,22 @@ export class ArenaScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.enemyBullets, this.handleEnemyBulletHitPlayer, undefined, this);
 
     this.playerDead = false;
-    this.waveClearedEmitted = false;
-    this.enemiesSpawned = false;
+    this.runEnded = false;
+    this.waveLogs = [];
+    this.mutationHistory = [];
+    this.prevMutation = 'NONE';
+    this.currentWave = 1;
 
     this.createHud();
 
-    // Task 5 임시 스폰 — 실제 웨이브 실행기(스폰 패턴 해석)는 Task 6.
-    this.spawnOpeningWaveTemp();
+    this.events.on('wave-cleared', this.onWaveCleared, this);
+    this.events.on('player-died', this.onPlayerDied, this);
+
+    // 웨이브 루프 시작 — 웨이브 1은 항상 고정 오프닝(로그가 아직 없음). 이후는 onWaveCleared가 이어간다.
+    this.beginWave(OPENING_WAVE);
+
     this.exposeStressSpawnHook();
+    console.log('[ArenaScene] 무적 검증: devtools 콘솔에서 window.__god = true 실행');
   }
 
   update(time: number, delta: number) {
@@ -77,7 +110,28 @@ export class ArenaScene extends Phaser.Scene {
       enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet);
     }
 
+    updateMutation(this, dt);
+    if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
+
     this.updateHud();
+  }
+
+  /** waveRunner가 웨이브의 마지막 스폰 배치를 디스패치한 직후 호출 — 그 전까지는 wave-clear 판정을 보류한다. */
+  markSpawningComplete() {
+    this.enemiesSpawned = true;
+    this.checkWaveClear();
+  }
+
+  isPlayerDead(): boolean {
+    return this.playerDead;
+  }
+
+  /** 피격 적용 — window.__god=true면 무시(검증용 치트, 브리프 Step 4). 성공하면 true. */
+  applyDamageToPlayer(): boolean {
+    if (isGodMode()) return false;
+    const applied = this.player.takeHit(this.time.now);
+    if (applied) this.hpLostThisWave++;
+    return applied;
   }
 
   /** Task 6·8이 소비하는 공개 스폰 API — 시그니처 고정 */
@@ -132,7 +186,7 @@ export class ArenaScene extends Phaser.Scene {
   private handleEnemyTouchPlayer = (_playerObj: unknown, enemyObj: unknown) => {
     const enemy = enemyObj as Enemy;
     if (!enemy.active) return;
-    const applied = this.player.takeHit(this.time.now);
+    const applied = this.applyDamageToPlayer();
     if (applied) {
       this.telemetry.recordDamage(enemy.enemyType);
       if (this.player.hp <= 0) this.handlePlayerDeath();
@@ -142,7 +196,7 @@ export class ArenaScene extends Phaser.Scene {
   private handleEnemyBulletHitPlayer = (_playerObj: unknown, bulletObj: unknown) => {
     const bullet = bulletObj as Bullet;
     if (!bullet.active) return;
-    const applied = this.player.takeHit(this.time.now);
+    const applied = this.applyDamageToPlayer();
     const sourceType = bullet.sourceType;
     bullet.hideAfterHit();
     if (applied && sourceType) {
@@ -183,22 +237,49 @@ export class ArenaScene extends Phaser.Scene {
     if (this.waveClearedEmitted || !this.enemiesSpawned || this.playerDead) return;
     if (this.enemies.countActive(true) === 0) {
       this.waveClearedEmitted = true;
-      console.log('[ArenaScene] wave-cleared', { wave: this.waveNumber });
-      this.events.emit('wave-cleared', this.waveNumber);
+      console.log('[ArenaScene] wave-cleared', { wave: this.currentWave });
+      this.events.emit('wave-cleared', this.currentWave);
     }
   }
 
-  /** Task 5 임시 구현 — RING 스폰 패턴의 근사치. 실제 스폰 패턴 해석기는 Task 6(waveRunner)이 대체한다. */
-  private spawnOpeningWaveTemp() {
-    const comp = OPENING_WAVE.composition[0];
-    const cx = this.scale.width / 2, cy = this.scale.height / 2;
-    const radius = 260;
-    for (let i = 0; i < comp.count; i++) {
-      const angle = (Math.PI * 2 * i) / comp.count;
-      this.spawnEnemy(comp.type, cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius, comp.elite);
-    }
-    this.enemiesSpawned = true;
+  /** 새 웨이브 시작: 텔레메트리 리셋 + 디렉티브 실행(스폰+mutation). create()가 오프닝에 한해 직접 호출한다. */
+  private beginWave(d: Directive) {
+    this.waveClearedEmitted = false;
+    this.enemiesSpawned = false;
+    this.telemetry = new WaveTelemetry();
+    this.activeMutation = d.mutation;
+    this.waveStartAt = this.time.now;
+    this.hpLostThisWave = 0;
+    runDirective(this, d);
   }
+
+  private onWaveCleared = (wave: number) => {
+    const clearTimeSec = (this.time.now - this.waveStartAt) / 1000;
+    this.mutationHistory.push(this.activeMutation);
+    const log = this.telemetry.finish(wave, clearTimeSec, [], [...this.mutationHistory]);
+    log.hpLost = this.hpLostThisWave; // damageSources 합산 대신 실제 피격 횟수(mutation 피해 포함)로 보정
+    this.waveLogs.push(log);
+    this.prevMutation = this.activeMutation;
+    clearMutation(this);
+
+    if (wave >= FINAL_WAVE) {
+      this.runEnded = true;
+      console.log('[ArenaScene] WIN');
+      return;
+    }
+
+    this.time.delayedCall(INTERVAL_MS, () => {
+      if (this.playerDead) return; // 인터벌 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
+      this.currentWave = wave + 1;
+      this.beginWave(pickFallback(this.currentWave, this.prevMutation));
+    });
+  };
+
+  private onPlayerDied = () => {
+    if (this.runEnded) return;
+    this.runEnded = true;
+    console.log('[ArenaScene] LOSE');
+  };
 
   /** 수동 검증(브리프 Step 3)용 — devtools 콘솔에서 window.spawnStress(50) 실행 */
   private exposeStressSpawnHook() {
@@ -217,7 +298,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private createHud() {
     this.waveText = this.add
-      .text(16, 10, `웨이브 ${this.waveNumber}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec' })
+      .text(16, 10, `웨이브 ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec' })
       .setDepth(HUD_DEPTH);
 
     const heartY = 42;
@@ -231,7 +312,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateHud() {
-    this.waveText.setText(`웨이브 ${this.waveNumber}`);
+    this.waveText.setText(`웨이브 ${this.currentWave}`);
     for (let i = 0; i < this.hearts.length; i++) {
       this.hearts[i].setAlpha(i < this.player.hp ? 1 : 0.25);
     }
