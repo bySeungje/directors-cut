@@ -84,6 +84,9 @@ export class ArenaScene extends Phaser.Scene {
   create() {
     generateTextures(this);
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
+    // 리스타트 안전성: 이전 런이 웨이브 클리어 슬로모(juice.ts) 도중 정확히 잘렸다면 timeScale이 1이 아닌
+    // 값으로 남아있을 수 있다 — 새 런은 항상 정상 속도로 시작해야 한다.
+    this.physics.world.timeScale = 1;
 
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: false });
     this.playerBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
@@ -117,6 +120,11 @@ export class ArenaScene extends Phaser.Scene {
     this.createHud();
     attachDirectorLog(this);
 
+    // 리스타트 안전성: Phaser는 씬 shutdown 시 scene.events(커스텀 이벤트)를 자동으로 비우지 않는다
+    // (destroy()에서만 전체 클리어됨 — InputPlugin·DisplayList 등 내장 시스템과 다르다). off 후 on으로
+    // 재등록하지 않으면 R 리스타트 후 2회차부터 wave-cleared/player-died가 런당 N배로 중복 발화한다.
+    this.events.off('wave-cleared', this.onWaveCleared, this);
+    this.events.off('player-died', this.onPlayerDied, this);
     this.events.on('wave-cleared', this.onWaveCleared, this);
     this.events.on('player-died', this.onPlayerDied, this);
 
@@ -353,6 +361,16 @@ export class ArenaScene extends Phaser.Scene {
   private onPlayerDied = () => {
     if (this.runEnded) return;
     this.runEnded = true;
+    // 이월 포인터(Task 9 브리프 "사망 웨이브 로그"): 사망 시점까지 진행된 웨이브는 원래 finish()가 호출되지
+    // 않아 waveLogs에서 유실됐다 — partial 스냅샷을 push해 런 요약(엔드게임 리포트 입력)에 포함시킨다.
+    // 단, waveClearedEmitted가 true면(인터벌 대기 중 잔여 적탄 등에 의한 사망) 그 웨이브의 로그는
+    // onWaveCleared가 이미 push했으므로 여기서 또 push하면 같은 웨이브 번호가 중복된다 — beginWave가
+    // 다음 웨이브 시작 시에만 이 플래그를 false로 되돌리므로, "이미 클리어된 웨이브"를 정확히 구분해준다.
+    if (!this.waveClearedEmitted) {
+      const log = this.snapshotCurrentWaveLog(this.currentWave);
+      this.waveLogs.push(log);
+      this.prevMutation = this.activeMutation;
+    }
     console.log('[ArenaScene] LOSE');
     this.time.delayedCall(LOSE_TRANSITION_DELAY_MS, () => this.endRun('LOSE'));
   };
