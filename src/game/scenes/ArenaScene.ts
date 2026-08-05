@@ -82,6 +82,10 @@ export class ArenaScene extends Phaser.Scene {
     this.mutationHistory = [];
     this.prevMutation = 'NONE';
     this.currentWave = 1;
+    // telemetry/hpLostThisWave는 여기서 최초 1회 생성 — 이후로는 onWaveCleared가 웨이브 종료 즉시 교체한다
+    // (beginWave에서 교체하면 인터벌 창의 잔여 피해가 이미 push된 이전 로그를 오염시킨다. F1 fix 참고)
+    this.telemetry = new WaveTelemetry();
+    this.hpLostThisWave = 0;
 
     this.createHud();
 
@@ -242,14 +246,14 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  /** 새 웨이브 시작: 텔레메트리 리셋 + 디렉티브 실행(스폰+mutation). create()가 오프닝에 한해 직접 호출한다. */
+  /** 새 웨이브 시작: 디렉티브 실행(스폰+mutation). create()가 오프닝에 한해 직접 호출한다.
+   *  텔레메트리 교체는 여기서 하지 않는다 — onWaveCleared가 웨이브 종료 "즉시"(인터벌 시작 전) 교체해야
+   *  인터벌 창의 잔여 피해·킬이 다음 웨이브 몫으로 자연 귀속된다. */
   private beginWave(d: Directive) {
     this.waveClearedEmitted = false;
     this.enemiesSpawned = false;
-    this.telemetry = new WaveTelemetry();
     this.activeMutation = d.mutation;
     this.waveStartAt = this.time.now;
-    this.hpLostThisWave = 0;
     runDirective(this, d);
   }
 
@@ -257,10 +261,20 @@ export class ArenaScene extends Phaser.Scene {
     const clearTimeSec = (this.time.now - this.waveStartAt) / 1000;
     this.mutationHistory.push(this.activeMutation);
     const log = this.telemetry.finish(wave, clearTimeSec, [], [...this.mutationHistory]);
+    // finish()가 반환하는 damageSources/combat.kills는 WaveTelemetry 내부 객체의 라이브 참조라
+    // 텔레메트리를 교체하기 전에 얕은 복사로 분리해둔다(값이 전부 원시 number라 얕은 복사=완전한 분리).
+    // 그렇지 않으면 인터벌 중 recordDamage/recordKill이 이미 push된 이 로그를 사후 변조한다.
+    log.damageSources = { ...log.damageSources };
+    log.combat = { ...log.combat, kills: { ...log.combat.kills } };
     log.hpLost = this.hpLostThisWave; // damageSources 합산 대신 실제 피격 횟수(mutation 피해 포함)로 보정
     this.waveLogs.push(log);
     this.prevMutation = this.activeMutation;
     clearMutation(this);
+
+    // 웨이브 종료 "즉시" 텔레메트리를 교체한다(다음 beginWave까지 기다리지 않음) — 인터벌 중(잔여 적탄 등)
+    // 발생하는 피해·킬·이동은 방금 push한(이미 스냅샷 분리된) 로그를 건드리지 않고 다음 웨이브 로그로 쌓인다.
+    this.telemetry = new WaveTelemetry();
+    this.hpLostThisWave = 0;
 
     if (wave >= FINAL_WAVE) {
       this.runEnded = true;

@@ -16,7 +16,15 @@ export function runDirective(scene: ArenaScene, d: Directive): void {
   applyMutation(scene, d.mutation);
 
   if (d.mutation === 'SPAWN_STORM') {
-    const batches = splitIntoStormBatches(d.composition);
+    // count가 작은 composition(예: count=1,2)은 splitIntoStormBatches가 뒤쪽 배치를 빈 배열로 반환할 수 있다.
+    // 빈 배치까지 그대로 스케줄하면 markSpawningComplete가 "마지막 배치 인덱스" 기준으로 최대 8초까지
+    // 밀려 wave-clear 판정이 지연된다 — 빈 배치를 제거하고 실제로 스폰이 있는 마지막 배치 시점에 완료 처리한다.
+    const batches = splitIntoStormBatches(d.composition).filter((batch) => batch.length > 0);
+    if (batches.length === 0) {
+      // composition/count 스키마 제약(최소 1)상 실질적으로 도달하지 않지만, 방어적으로 즉시 완료 처리한다.
+      scene.markSpawningComplete();
+      return;
+    }
     batches.forEach((batch, i) => {
       scene.time.delayedCall(i * STORM_INTERVAL_MS, () => {
         if (scene.isPlayerDead()) return;
