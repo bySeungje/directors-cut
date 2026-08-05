@@ -1,8 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setActiveBuff, clearBuff, getActiveBuff,
   buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, buffedSplitCount,
 } from '../src/game/buffs';
+
+// mutations.ts는 최상단에서 `import Phaser from 'phaser'`를 실행하는데, Phaser는 모듈 로드 시점에
+// window/navigator/document를 참조해 vitest 기본(node) 환경에서 크래시한다(ReferenceError: window is not defined,
+// 참고: upgrades.test.ts의 동일 이슈 주석). clearMutation은 인자도 실제 Phaser 객체도 쓰지 않는 경로만 테스트하므로
+// (mutation NONE → state는 null → disposables/scene 접근 없이 조기 return) phaser 자체를 더미로 모킹해 우회한다.
+vi.mock('phaser', () => ({ default: {} }));
+import { clearMutation } from '../src/game/mutations';
 
 beforeEach(() => clearBuff());
 
@@ -89,5 +96,21 @@ describe('NONE — 아무것도 바꾸지 않는다', () => {
     expect(buffedKeepDistance(260)).toBe(260);
     expect(buffedBulletSpeed(300)).toBe(300);
     expect(buffedSplitCount()).toBe(2);
+  });
+});
+
+describe('누적 방지 — clearMutation이 buff를 리셋한다', () => {
+  it('mutation이 NONE이라 state가 없는 웨이브에서도 리셋된다', () => {
+    // clearBuff()가 `if (!state) return;` 가드 뒤로 옮겨지면 이 테스트가 깨진다.
+    setActiveBuff('TOUGH');
+    clearMutation(null as never);
+    expect(getActiveBuff()).toBe('NONE');
+  });
+
+  it('연속 호출해도 NONE을 유지한다', () => {
+    setActiveBuff('VOLATILE');
+    clearMutation(null as never);
+    clearMutation(null as never);
+    expect(getActiveBuff()).toBe('NONE');
   });
 });
