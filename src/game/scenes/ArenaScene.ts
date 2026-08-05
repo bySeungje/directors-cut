@@ -2,13 +2,18 @@ import Phaser from 'phaser';
 import { Directive, EnemyType, Mutation, WaveLog } from '../../contracts/directive';
 import { OPENING_WAVE } from '../../director/fallbackBank';
 import { WaveTelemetry } from '../../telemetry/collector';
-import { Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures } from '../entities';
+import {
+  Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures,
+  PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
+} from '../entities';
 import { runDirective } from '../waveRunner';
 import { clearMutation, updateMutation } from '../mutations';
 import { requestDirective } from '../../director/client';
 import { runInterval } from '../../ui/interval';
 import { attachDirectorLog } from '../../ui/directorLog';
 import type { UpgradeId } from '../upgrades';
+import { shakeOnHit, killBurst, waveClearSlowmo, dashAfterimage } from '../juice';
+import { playShoot, playHit, playKill, playWaveClear, toggleMute, isMuted } from '../sound';
 
 const STRESS_TYPES: EnemyType[] = ['chaser', 'shooter', 'splitter'];
 
@@ -19,6 +24,12 @@ const SPLITTER_MINI_SCALE = 0.6;
 const HUD_DEPTH = 1000;
 
 const FINAL_WAVE = 7;
+
+// EndScene 전환 전 짧은 대기 — 주스(슬로모·아르페지오/흔들림·타격음)가 화면 전환에 잘려 체감되지 않는 걸 막는다
+// (재량 결정, Task 9 브리프에 정확한 값 명시 없음). WIN은 waveClearSlowmo(0.5s)+아르페지오가 끝날 시간을,
+// LOSE는 마지막 피격의 흔들림·사운드가 등록될 시간을 준다.
+const WIN_TRANSITION_DELAY_MS = 600;
+const LOSE_TRANSITION_DELAY_MS = 500;
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true */
 function isGodMode(): boolean {
@@ -64,6 +75,7 @@ export class ArenaScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
+  private muteText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('ArenaScene');
@@ -78,7 +90,10 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
-    this.player.onDash = () => this.telemetry.recordDash();
+    this.player.onDash = () => {
+      this.telemetry.recordDash();
+      dashAfterimage(this, this.player, PLAYER_COLOR);
+    };
 
     this.physics.add.overlap(this.playerBullets, this.enemies, this.handlePlayerBulletHitEnemy, undefined, this);
     this.physics.add.overlap(this.player, this.enemies, this.handleEnemyTouchPlayer, undefined, this);
@@ -105,6 +120,9 @@ export class ArenaScene extends Phaser.Scene {
     this.events.on('wave-cleared', this.onWaveCleared, this);
     this.events.on('player-died', this.onPlayerDied, this);
 
+    // M 음소거 토글
+    this.input.keyboard!.on('keydown-M', () => toggleMute());
+
     // 웨이브 루프 시작 — 웨이브 1은 항상 고정 오프닝(로그가 아직 없음). 이후는 onWaveCleared가 이어간다.
     this.beginWave(OPENING_WAVE);
 
@@ -120,6 +138,7 @@ export class ArenaScene extends Phaser.Scene {
     this.telemetry.tick(this.player.x, this.player.y, this.scale.width, this.scale.height, dt);
 
     const fireAngles = this.player.update(time, delta, this.enemies);
+    if (fireAngles.length > 0) playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     const enemyList = this.enemies.getChildren() as Enemy[];
@@ -148,7 +167,11 @@ export class ArenaScene extends Phaser.Scene {
   applyDamageToPlayer(): boolean {
     if (isGodMode()) return false;
     const applied = this.player.takeHit(this.time.now);
-    if (applied) this.hpLostThisWave++;
+    if (applied) {
+      this.hpLostThisWave++;
+      shakeOnHit(this);
+      playHit();
+    }
     return applied;
   }
 
@@ -225,12 +248,15 @@ export class ArenaScene extends Phaser.Scene {
 
   private onEnemyDeath(enemy: Enemy) {
     this.telemetry.recordKill(enemy.enemyType);
+    playKill();
 
     const wasSplit = enemy.canSplit;
     const x = enemy.x, y = enemy.y;
+    const color = enemy.elite ? ELITE_COLOR : ENEMY_COLOR;
     enemy.setActive(false).setVisible(false);
     enemy.body.enable = false;
     enemy.body.setVelocity(0, 0);
+    killBurst(this, x, y, color);
 
     if (wasSplit) {
       // 분열 위치: 임의 축 위 대칭 오프셋(재량 결정 — 브리프에 위치 명시 없음)
@@ -289,6 +315,8 @@ export class ArenaScene extends Phaser.Scene {
     this.waveLogs.push(log);
     this.prevMutation = this.activeMutation;
     clearMutation(this);
+    waveClearSlowmo(this);
+    playWaveClear();
 
     // 웨이브 종료 "즉시" 텔레메트리를 교체한다(다음 beginWave까지 기다리지 않음) — 인터벌 중(잔여 적탄 등)
     // 발생하는 피해·킬·이동은 방금 push한(이미 스냅샷 분리된) 로그를 건드리지 않고 다음 웨이브 로그로 쌓인다.
@@ -298,7 +326,7 @@ export class ArenaScene extends Phaser.Scene {
     if (wave >= FINAL_WAVE) {
       this.runEnded = true;
       console.log('[ArenaScene] WIN');
-      this.endRun('WIN');
+      this.time.delayedCall(WIN_TRANSITION_DELAY_MS, () => this.endRun('WIN'));
       return;
     }
 
@@ -326,7 +354,7 @@ export class ArenaScene extends Phaser.Scene {
     if (this.runEnded) return;
     this.runEnded = true;
     console.log('[ArenaScene] LOSE');
-    this.endRun('LOSE');
+    this.time.delayedCall(LOSE_TRANSITION_DELAY_MS, () => this.endRun('LOSE'));
   };
 
   /** 런 종료 — EndScene으로 전환하며 리포트 조립에 필요한 원재료(웨이브 로그·업그레이드 이력)를 넘긴다.
@@ -360,6 +388,9 @@ export class ArenaScene extends Phaser.Scene {
       .setDepth(HUD_DEPTH);
 
     this.dashGauge = this.add.graphics().setDepth(HUD_DEPTH);
+    this.muteText = this.add
+      .text(16, 80, '', { fontFamily: 'monospace', fontSize: '11px', color: '#3a3a46' })
+      .setDepth(HUD_DEPTH);
     this.syncHearts();
     this.updateHud();
   }
@@ -376,6 +407,8 @@ export class ArenaScene extends Phaser.Scene {
     this.dashGauge.fillStyle(0x2a2a33, 1).fillRect(x, y, w, h);
     const frac = this.player.dashReadyFraction(this.time.now);
     this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
+
+    this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
   }
 
   /** 하트 개수를 player.stats.maxHp에 맞춘다(Task 8: HP_PLUS로 최대 체력이 늘면 칸도 늘어난다).

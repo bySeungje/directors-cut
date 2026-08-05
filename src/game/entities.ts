@@ -19,9 +19,11 @@ export const ENEMY_DEF: Record<EnemyType, { hp: number; speed: number; size: num
 export const ENEMY_BULLET_SPEED = 220;
 
 // ── 비주얼 상수 (스펙 3.5: 무채색 엔티티, 레드는 디렉터/엘리트 전용) ─────────
-const PLAYER_COLOR = 0xe8e8ec;
-const ENEMY_COLOR = 0x9a9aa8;
-const ELITE_COLOR = 0xff2d2d;
+// PLAYER_COLOR/ENEMY_COLOR/ELITE_COLOR는 export도 한다 — juice.ts의 킬 파편·대시 잔상 틴트가
+// 여기 팔레트를 그대로 물려받아야 색이 갈라지지 않는다(Task 9).
+export const PLAYER_COLOR = 0xe8e8ec;
+export const ENEMY_COLOR = 0x9a9aa8;
+export const ELITE_COLOR = 0xff2d2d;
 const ELITE_SCALE = 1.4;
 const ELITE_HP_MULT = 3;
 const ELITE_SPEED_MULT = 1.15; // 스펙 3.3 "이속 소폭↑" — 브리프 누락분 반영(Task 10 밸런싱에서 조정 가능)
