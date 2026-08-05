@@ -804,6 +804,8 @@ export async function requestDirective(
 
 - [ ] **Step 3: directorLog.ts (컷 후보)** — L키 토글, 우측에 최근 디렉티브 JSON + fromLLM 뱃지 표시(시연·영상용).
 
+- [ ] **Step 3.5: dev QA 훅** *(추가 2026-08-05 — 백그라운드 탭 RAF 정지로 원격 플레이 QA 불가 확인)* — dev 빌드에서만(`import.meta.env.DEV`): `window.__game = game`(main.ts), ArenaScene에 `window.__skipWave()`(현재 웨이브 즉시 클리어 처리) 노출. 컨트롤러가 mutation 육안 검증·완주 QA를 빠르게 수행하기 위한 장치. 프로덕션 번들에서는 제외.
+
 - [ ] **Step 4: 수동 검증 + 커밋** — 인터벌 흐름이 8초 내외로 리드미컬한지, 업그레이드가 체감되는지. 커밋: `feat: 디렉터 인터벌 — 대사 연출·업그레이드 3택1·로그 패널`
 
 ---
