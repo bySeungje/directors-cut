@@ -6,6 +6,9 @@ import { Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, ge
 import { runDirective } from '../waveRunner';
 import { clearMutation, updateMutation } from '../mutations';
 import { requestDirective } from '../../director/client';
+import { runInterval } from '../../ui/interval';
+import { attachDirectorLog } from '../../ui/directorLog';
+import type { UpgradeId } from '../upgrades';
 
 const STRESS_TYPES: EnemyType[] = ['chaser', 'shooter', 'splitter'];
 
@@ -15,9 +18,6 @@ const SPLITTER_MINI_SCALE = 0.6;
 
 const HUD_DEPTH = 1000;
 
-// 인터벌 최소 대기 — requestDirective(최대 4초 내 반드시 resolve)와 Promise.all로 경합해
-// 최소 이 값만큼은 보장하고, 그 사이 결과가 오면 그만큼만 기다린다. Task 8이 이 구간에 연출을 채울 예정.
-const INTERVAL_MS = 2000;
 const FINAL_WAVE = 7;
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true */
@@ -40,6 +40,10 @@ export class ArenaScene extends Phaser.Scene {
   prevMutation: Mutation = 'NONE';
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
   lastDirectiveFromLLM = false;
+  /** Task 8 로그 패널이 소비 — 가장 최근에 알려진 디렉티브(오프닝 포함). 인터벌 중엔 이미 다음 웨이브 몫으로 갱신된다. */
+  lastDirective: Directive = OPENING_WAVE;
+  /** Task 8 인터벌에서 선택한 업그레이드 누적(런 전체) — WaveLog.upgrades로 다음 디렉티브 요청에 실린다 */
+  chosenUpgrades: UpgradeId[] = [];
 
   private playerBullets!: Phaser.Physics.Arcade.Group;
   private enemyBullets!: Phaser.Physics.Arcade.Group;
@@ -87,12 +91,16 @@ export class ArenaScene extends Phaser.Scene {
     this.prevMutation = 'NONE';
     this.currentWave = 1;
     this.lastDirectiveFromLLM = false;
+    this.lastDirective = OPENING_WAVE;
+    this.chosenUpgrades = [];
+    this.hearts = []; // syncHearts가 개수를 맞춰 재생성한다 — 재시작 시 이전 씬의 하트 참조를 들고 있지 않게 비워둔다
     // telemetry/hpLostThisWave는 여기서 최초 1회 생성 — 이후로는 onWaveCleared가 웨이브 종료 즉시 교체한다
     // (beginWave에서 교체하면 인터벌 창의 잔여 피해가 이미 push된 이전 로그를 오염시킨다. F1 fix 참고)
     this.telemetry = new WaveTelemetry();
     this.hpLostThisWave = 0;
 
     this.createHud();
+    attachDirectorLog(this);
 
     this.events.on('wave-cleared', this.onWaveCleared, this);
     this.events.on('player-died', this.onPlayerDied, this);
@@ -101,6 +109,7 @@ export class ArenaScene extends Phaser.Scene {
     this.beginWave(OPENING_WAVE);
 
     this.exposeStressSpawnHook();
+    if (import.meta.env.DEV) this.exposeDevQaHooks();
     console.log('[ArenaScene] 무적 검증: devtools 콘솔에서 window.__god = true 실행');
   }
 
@@ -265,7 +274,7 @@ export class ArenaScene extends Phaser.Scene {
   private onWaveCleared = (wave: number) => {
     const clearTimeSec = (this.time.now - this.waveStartAt) / 1000;
     this.mutationHistory.push(this.activeMutation);
-    const log = this.telemetry.finish(wave, clearTimeSec, [], [...this.mutationHistory]);
+    const log = this.telemetry.finish(wave, clearTimeSec, [...this.chosenUpgrades], [...this.mutationHistory]);
     // finish()가 반환하는 damageSources/combat.kills는 WaveTelemetry 내부 객체의 라이브 참조라
     // 텔레메트리를 교체하기 전에 얕은 복사로 분리해둔다(값이 전부 원시 number라 얕은 복사=완전한 분리).
     // 그렇지 않으면 인터벌 중 recordDamage/recordKill이 이미 push된 이 로그를 사후 변조한다.
@@ -287,18 +296,23 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
-    // requestDirective는 웨이브 종료 즉시 시작(promise)하고, 기존 인터벌 최소 대기와 경합시킨다 —
-    // 둘 다 끝나야 다음 웨이브를 시작한다(최소 INTERVAL_MS는 보장, 디렉티브는 최대 4초 내 반드시 resolve).
-    // 오프라인·실패·검증 실패 시의 폴백은 requestDirective 내부에서 처리되므로 여기서 pickFallback을 직접 호출하지 않는다.
+    // requestDirective는 웨이브 종료 즉시 시작(최대 4초 내 반드시 resolve). 오프라인·실패·검증 실패 시의
+    // 폴백은 내부에서 처리되므로 여기서 pickFallback을 직접 호출하지 않는다.
+    // 기존의 고정 2초 최소 대기(placeholder)는 인터벌 연출로 대체됐다 — 대사 타이핑 자체가 시간을 만들고
+    // (디렉티브가 이미 도착한 상태에서 연출을 시작하므로), 카드 선택은 플레이어 페이스라 별도 대기가 불필요하다.
+    // currentWave는 카드 선택 완료(onDone) 시점까지 갱신하지 않는다 — 그래야 인터벌 내내 좌상단 HUD와
+    // 인터벌 패널의 "웨이브 N 클리어" 헤더가 같은(방금 끝난) 웨이브 번호를 가리켜 서로 어긋나지 않는다.
     const nextWave = wave + 1;
-    const directivePromise = requestDirective(log, nextWave, this.prevMutation);
-    const minWaitPromise = new Promise<void>((resolve) => this.time.delayedCall(INTERVAL_MS, resolve));
-
-    Promise.all([directivePromise, minWaitPromise]).then(([{ directive, fromLLM }]) => {
-      if (this.playerDead) return; // 인터벌 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
-      this.currentWave = nextWave;
+    requestDirective(log, nextWave, this.prevMutation).then(({ directive, fromLLM }) => {
+      if (this.playerDead) return; // 인터벌 대기 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
       this.lastDirectiveFromLLM = fromLLM;
-      this.beginWave(directive);
+      this.lastDirective = directive;
+      runInterval(this, directive, (picked) => {
+        if (this.playerDead) return; // 대사·카드 선택 중에도 잔여 피해로 사망할 수 있어 onDone에도 동일 가드
+        this.chosenUpgrades.push(picked);
+        this.currentWave = nextWave;
+        this.beginWave(directive);
+      });
     });
   };
 
@@ -328,18 +342,14 @@ export class ArenaScene extends Phaser.Scene {
       .text(16, 10, `웨이브 ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec' })
       .setDepth(HUD_DEPTH);
 
-    const heartY = 42;
-    for (let i = 0; i < this.player.maxHp; i++) {
-      const heart = this.add.image(18 + i * 22, heartY, HUD_HEART_TEX).setDepth(HUD_DEPTH);
-      this.hearts.push(heart);
-    }
-
     this.dashGauge = this.add.graphics().setDepth(HUD_DEPTH);
+    this.syncHearts();
     this.updateHud();
   }
 
   private updateHud() {
     this.waveText.setText(`웨이브 ${this.currentWave}`);
+    this.syncHearts();
     for (let i = 0; i < this.hearts.length; i++) {
       this.hearts[i].setAlpha(i < this.player.hp ? 1 : 0.25);
     }
@@ -349,5 +359,42 @@ export class ArenaScene extends Phaser.Scene {
     this.dashGauge.fillStyle(0x2a2a33, 1).fillRect(x, y, w, h);
     const frac = this.player.dashReadyFraction(this.time.now);
     this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
+  }
+
+  /** 하트 개수를 player.stats.maxHp에 맞춘다(Task 8: HP_PLUS로 최대 체력이 늘면 칸도 늘어난다).
+   *  원래 5칸 고정이던 것을 동적 생성으로 교체했다(브리프 재량 사항) — 매 프레임 호출되지만
+   *  길이 비교뿐이라 변화가 없을 때는 사실상 비용이 없다. */
+  private syncHearts() {
+    const heartY = 42;
+    const max = this.player.stats.maxHp;
+    while (this.hearts.length < max) {
+      const i = this.hearts.length;
+      this.hearts.push(this.add.image(18 + i * 22, heartY, HUD_HEART_TEX).setDepth(HUD_DEPTH));
+    }
+    while (this.hearts.length > max) {
+      this.hearts.pop()!.destroy();
+    }
+  }
+
+  /** dev QA 훅(브리프 Task 8 Step 3.5) — 원격 플레이 중 백그라운드 탭은 requestAnimationFrame이 멈춰
+   *  수동 진행이 불가능하다는 게 확인돼 추가됐다. import.meta.env.DEV는 빌드 타임 상수로 치환되므로
+   *  이 메서드 자체는 프로덕션 빌드에서도 남지만, 호출부(create())가 dead-code로 제거돼 실행되지 않는다. */
+  private exposeDevQaHooks() {
+    const win = window as unknown as { __skipWave?: () => void };
+    win.__skipWave = () => this.skipWave();
+    console.log('[ArenaScene] dev QA: devtools 콘솔에서 window.__skipWave() 실행 (현재 웨이브 즉시 클리어)');
+  }
+
+  /** 현재 웨이브의 활성 적을 전멸 처리해 일반 킬과 동일한 경로(checkWaveClear 게이트 포함)로 wave-cleared를
+   *  유도한다. SPAWN_STORM처럼 아직 스폰 중인 웨이브는 markSpawningComplete 이전이라 이 호출만으로 즉시
+   *  클리어되지 않을 수 있다 — enemiesSpawned 게이트를 우회하지 않는다(재량 결정: 기존 wave-clear
+   *  불변식을 QA 편의보다 우선). */
+  skipWave() {
+    const list = this.enemies.getChildren() as Enemy[];
+    for (const e of list) {
+      if (!e.active) continue;
+      e.canSplit = false; // 스킵 중 분열 연쇄를 방지(QA 편의 — 재량 결정)
+      this.onEnemyDeath(e);
+    }
   }
 }

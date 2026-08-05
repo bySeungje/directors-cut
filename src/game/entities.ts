@@ -3,10 +3,10 @@ import { EnemyType } from '../contracts/directive';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
-  pierce: number; multishot: number; dashCooldownMs: number;
+  pierce: number; multishot: number; dashCooldownMs: number; maxHp: number;
 }
 export const BASE_STATS: PlayerStats = {
-  damage: 1, fireRateMs: 280, moveSpeed: 220, bulletSpeed: 480, pierce: 0, multishot: 1, dashCooldownMs: 2000,
+  damage: 1, fireRateMs: 280, moveSpeed: 220, bulletSpeed: 480, pierce: 0, multishot: 1, dashCooldownMs: 2000, maxHp: 5,
 };
 
 export const ENEMY_DEF: Record<EnemyType, { hp: number; speed: number; size: number }> = {
@@ -182,9 +182,9 @@ type PlayerKeys = {
 export class Player extends Phaser.Physics.Arcade.Sprite {
   declare body: Phaser.Physics.Arcade.Body;
 
-  hp = 5;
-  readonly maxHp = 5;
+  // stats가 먼저 초기화돼야 hp가 stats.maxHp를 읽을 수 있다(클래스 필드는 선언 순서대로 초기화된다).
   stats: PlayerStats = { ...BASE_STATS };
+  hp = this.stats.maxHp;
 
   /** 텔레메트리 훅 — ArenaScene이 연결한다 */
   onDash?: () => void;
@@ -216,6 +216,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.hp -= 1;
     this.hitInvulnUntil = time + HIT_INVULN_MS;
     return true;
+  }
+
+  /** 업그레이드 적용(Task 8) — maxHp가 늘면 늘어난 만큼 즉시 회복한다.
+   *  HP_PLUS의 "최대+1·회복+1"을 개별 업그레이드가 아니라 이 규칙으로 일반화했다: maxHp 증가분 = 회복량. */
+  applyStats(newStats: PlayerStats) {
+    const healedBy = Math.max(0, newStats.maxHp - this.stats.maxHp);
+    this.stats = newStats;
+    if (healedBy > 0) this.hp = Math.min(this.stats.maxHp, this.hp + healedBy);
   }
 
   /** 0(직후)~1(사용 가능) — HUD 게이지용 */
