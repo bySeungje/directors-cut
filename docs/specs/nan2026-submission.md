@@ -10,7 +10,7 @@
 - [x] 컨셉 확정 (AI 디렉터 아케이드)
 - [x] 디자인 승인 (조작·엔진·가제 포함)
 - [x] 스펙 frozen (2026-08-04)
-- [ ] 구현 플랜 승인
+- [x] 구현 플랜 승인 + 화면 시안 v1 확정 (2026-08-05 승제 "이대로 가보면 좋겠다")
 - [ ] 스캐폴딩 (repo 공개 설정·CLAUDE.md·하네스·Pages 배포 라인)
 - [ ] 코어 루프 (이동·사격·적 3종·웨이브)
 - [ ] 디렉터 연동 (프록시·directive·폴백)
@@ -147,6 +147,7 @@
 
 ## 8. 참고
 
+- 화면 시안 v1 (2026-08-05 확정): https://claude.ai/code/artifact/6a98191a-a032-45f4-9b47-5253eece7e41
 - 공고 분석: `~/projects/claudedocs/research_NAN2026_공고분석_20260804.md`
 - 사전과제 원문·FAQ·약관: 공고 분석 문서 3·5절
 - 하네스 규약: `~/projects/_ai-dlc/docs/ai-dlc/HARNESS_CONTRACT.md`
