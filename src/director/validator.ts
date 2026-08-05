@@ -1,7 +1,7 @@
 import { Directive, DirectiveSchema, Mutation, Composition, ENEMY_COST, ELITE_MULT } from '../contracts/directive';
 
 export function budgetFor(wave: number): number {
-  return 8 + wave * 4; // w1=12 … w7=36 (밸런싱 태스크에서 조정 가능)
+  return 8 + wave * 4 + Math.max(0, wave - 5) * 12;
 }
 
 export function costOf(c: Composition): number {
