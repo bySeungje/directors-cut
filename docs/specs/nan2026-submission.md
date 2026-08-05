@@ -115,14 +115,14 @@
 | 카드 | 효과 | 노리는 습관(로그 지표) |
 |---|---|---|
 | `NONE` | 없음 | — |
-| `TOUGH` | 전 적 HP +1 | 명중률 높음 (`combat.accuracy`) |
+| `TOUGH` | 전 적 HP +1 (분열 소형 제외 — 소형은 항상 HP 1) | 명중률 높음 (`combat.accuracy`) |
 | `SWIFT` | 전 적 이속 +25% | 거리를 벌리며 지연 (`clearTimeSec` 김) |
 | `RELENTLESS` | chaser 이속 +45%, chaser HP −1(최소 1) | 대시 남용 (`movement.dashCount`) |
 | `RAPID_FIRE` | shooter 발사 간격 ×0.6 (1600→960ms) | 탄을 잘 피함 (`hpLost` 낮음) |
 | `MARKSMAN` | shooter 탄속 +50%, 유지거리 +80 (260→340) | 원거리 안전지대 사용 (`wallHugRatio` 낮음) |
 | `VOLATILE` | splitter 분열 소형 2→3기 | 물량 처리 능숙 (`combat.kills.splitter`) |
 
-**적용 순서**: `ENEMY_DEF` 기본값 → elite 배수 → 강화 카드. 예) elite chaser HP = 2×3=6, `TOUGH` 적용 시 7. 이속은 elite 1.15 × `SWIFT` 1.25 = 1.4375배.
+**적용 순서**: `ENEMY_DEF` 기본값 → elite 배수 → 강화 카드. 단 splitter 분열 소형은 `hpOverride: 1`로 스폰되어 HP 버프를 받지 않는다(이속 버프는 받는다). 카드 비용을 소형까지 강화되는 것을 전제로 매기지 않았고, 걸리면 splitter 중심 웨이브의 난이도가 급등하기 때문이다 — 2026-08-05 전체 리뷰에서 확인·의도로 확정. 예) elite chaser HP = 2×3=6, `TOUGH` 적용 시 7. 이속은 elite 1.15 × `SWIFT` 1.25 = 1.4375배.
 
 **밸런스 규칙 (검증 계층이 강제, 위반 시 폴백)**:
 1. **웨이브당 1장.** 웨이브 1(오프닝)은 항상 `NONE`.
