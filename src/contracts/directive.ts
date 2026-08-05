@@ -3,10 +3,12 @@ import { z } from 'zod';
 export const ENEMY_TYPES = ['chaser', 'shooter', 'splitter'] as const;
 export const SPAWN_PATTERNS = ['N', 'S', 'E', 'W', 'RING', 'PINCER', 'BEHIND'] as const;
 export const MUTATIONS = ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] as const;
+export const BUFF_CARDS = ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE'] as const;
 
 export type EnemyType = (typeof ENEMY_TYPES)[number];
 export type SpawnPattern = (typeof SPAWN_PATTERNS)[number];
 export type Mutation = (typeof MUTATIONS)[number];
+export type BuffCard = (typeof BUFF_CARDS)[number];
 
 export const CompositionSchema = z.object({
   type: z.enum(ENEMY_TYPES),
@@ -18,6 +20,7 @@ export const CompositionSchema = z.object({
 export const DirectiveSchema = z.object({
   composition: z.array(CompositionSchema).min(1).max(4),
   mutation: z.enum(MUTATIONS),
+  buff: z.enum(BUFF_CARDS),
   taunt: z.string().min(1).max(60),
   intent: z.string().min(1).max(100),
 });
@@ -38,6 +41,8 @@ export interface WaveLog {
 
 export const ENEMY_COST: Record<EnemyType, number> = { chaser: 1, shooter: 2, splitter: 2 };
 export const ELITE_MULT = 3;
+/** 강화 카드 비용 = 해당 웨이브 예산의 25%(반올림). NONE은 0. (스펙 §3.4.1) */
+export const BUFF_COST_RATIO = 0.25;
 
 // API structured output용 (프록시에서 사용). Anthropic structured outputs는 minimum/maximum/maxLength/minItems를
 // 지원하지 않아 위 zod 스키마와의 완전한 파리티는 원리적으로 불가능하다 — 범위를 벗어난 응답은 validateDirective가
@@ -60,9 +65,10 @@ export const DIRECTIVE_JSON_SCHEMA = {
       },
     },
     mutation: { type: 'string', enum: [...MUTATIONS] },
+    buff: { type: 'string', enum: [...BUFF_CARDS] },
     taunt: { type: 'string' },
     intent: { type: 'string' },
   },
-  required: ['composition', 'mutation', 'taunt', 'intent'],
+  required: ['composition', 'mutation', 'buff', 'taunt', 'intent'],
   additionalProperties: false,
 } as const;

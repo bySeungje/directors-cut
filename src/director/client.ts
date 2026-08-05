@@ -1,4 +1,4 @@
-import { Directive, Mutation, WaveLog } from '../contracts/directive';
+import { Directive, Mutation, BuffCard, WaveLog } from '../contracts/directive';
 import { validateDirective, budgetFor } from './validator';
 import { pickFallback } from './fallbackBank';
 
@@ -14,7 +14,7 @@ const WARMUP_LOG: WaveLog = {
 };
 
 export async function requestDirective(
-  log: WaveLog, wave: number, prevMutation: Mutation,
+  log: WaveLog, wave: number, prevMutation: Mutation, prevBuff: BuffCard,
 ): Promise<{ directive: Directive; fromLLM: boolean }> {
   if (!DIRECTOR_URL) return { directive: pickFallback(wave, prevMutation), fromLLM: false };
   const ctrl = new AbortController();
@@ -28,7 +28,7 @@ export async function requestDirective(
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const body = await res.json();
-    const valid = validateDirective(body.directive, wave, prevMutation);
+    const valid = validateDirective(body.directive, wave, prevMutation, prevBuff);
     if (!valid) throw new Error('invalid directive');
     return { directive: valid, fromLLM: true };
   } catch {

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Directive, EnemyType, Mutation, WaveLog } from '../../contracts/directive';
+import { Directive, EnemyType, Mutation, BuffCard, WaveLog } from '../../contracts/directive';
 import { OPENING_WAVE } from '../../director/fallbackBank';
 import { WaveTelemetry } from '../../telemetry/collector';
 import {
@@ -49,6 +49,8 @@ export class ArenaScene extends Phaser.Scene {
   currentWave = 1;
   /** Task 7이 소비 — 가장 최근에 완료된 웨이브의 mutation(다음 requestDirective 호출에 씀) */
   prevMutation: Mutation = 'NONE';
+  /** 가장 최근에 완료된 웨이브의 buff(다음 requestDirective 호출에 씀). 웨이브 종료 시 갱신하는 로직·리셋은 Task 3. */
+  prevBuff: BuffCard = 'NONE';
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
   lastDirectiveFromLLM = false;
   /** Task 8 로그 패널이 소비 — 가장 최근에 알려진 디렉티브(오프닝 포함). 인터벌 중엔 이미 다음 웨이브 몫으로 갱신된다. */
@@ -344,7 +346,7 @@ export class ArenaScene extends Phaser.Scene {
     // currentWave는 카드 선택 완료(onDone) 시점까지 갱신하지 않는다 — 그래야 인터벌 내내 좌상단 HUD와
     // 인터벌 패널의 "웨이브 N 클리어" 헤더가 같은(방금 끝난) 웨이브 번호를 가리켜 서로 어긋나지 않는다.
     const nextWave = wave + 1;
-    requestDirective(log, nextWave, this.prevMutation).then(({ directive, fromLLM }) => {
+    requestDirective(log, nextWave, this.prevMutation, this.prevBuff).then(({ directive, fromLLM }) => {
       if (this.playerDead) return; // 인터벌 대기 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
       this.lastDirectiveFromLLM = fromLLM;
       this.lastDirective = directive;
