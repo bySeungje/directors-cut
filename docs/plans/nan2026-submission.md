@@ -325,8 +325,11 @@ export const DIRECTIVE_JSON_SCHEMA = {
 import { Directive, DirectiveSchema, Mutation, Composition, ENEMY_COST, ELITE_MULT } from '../contracts/directive';
 
 export function budgetFor(wave: number): number {
-  return 8 + wave * 4; // w1=12 … w7=36 (밸런싱 태스크에서 조정 가능)
+  return 8 + wave * 4 + Math.max(0, wave - 5) * 12;
 }
+// w1~5: 12,16,20,24,28 (완만) / w6: 44, w7: 60 (피날레 가속)
+// [개정 2026-08-05] 초안(8+4w)은 웨이브 6~7 피날레 뱅크 콘텐츠(엘리트 물량)와 모순 —
+// 승인된 콘텐츠를 유지하고 곡선을 가속하는 쪽으로 결정. 최종 수치는 Task 10 밸런싱에서 조정 가능.
 
 export function costOf(c: Composition): number {
   return c.count * ENEMY_COST[c.type] * (c.elite ? ELITE_MULT : 1);
