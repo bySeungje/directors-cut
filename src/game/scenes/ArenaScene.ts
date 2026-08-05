@@ -84,9 +84,6 @@ export class ArenaScene extends Phaser.Scene {
   create() {
     generateTextures(this);
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
-    // 리스타트 안전성: 이전 런이 웨이브 클리어 슬로모(juice.ts) 도중 정확히 잘렸다면 timeScale이 1이 아닌
-    // 값으로 남아있을 수 있다 — 새 런은 항상 정상 속도로 시작해야 한다.
-    this.physics.world.timeScale = 1;
 
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: false });
     this.playerBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
@@ -371,6 +368,10 @@ export class ArenaScene extends Phaser.Scene {
       this.waveLogs.push(log);
       this.prevMutation = this.activeMutation;
     }
+    // onWaveCleared와 대칭: 사망 시점에도 활성 mutation의 시각 리소스(그래픽스·RenderTexture)를 정리한다.
+    // waveClearedEmitted가 true인 경로(인터벌 대기 중 사망)에서는 onWaveCleared가 이미 호출했으므로
+    // 여기서는 no-op(state가 이미 null) — 방어적 호출이라 중복 호출도 안전하다.
+    clearMutation(this);
     console.log('[ArenaScene] LOSE');
     this.time.delayedCall(LOSE_TRANSITION_DELAY_MS, () => this.endRun('LOSE'));
   };
