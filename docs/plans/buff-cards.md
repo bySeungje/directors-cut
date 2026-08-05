@@ -531,6 +531,53 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 3.5: 누적 방지 회귀 테스트 *(플랜 추가 2026-08-05 — Task 3 리뷰의 Minor 반영)*
+
+**왜:** 카드 누적 금지는 밸런스의 핵심 방어선인데, `clearMutation()` 안의 `clearBuff()` 호출 위치(`if (!state) return;` **앞**)가 바뀌면 mutation이 `NONE`인 웨이브에서 리셋이 조용히 건너뛰어진다. 현재 이 시나리오를 찍는 자동 테스트가 없어 라이브 실측 말고는 회귀를 잡을 장치가 없다. 리뷰어가 지적한 미사용 export `getActiveBuff()`도 이 테스트가 소비하게 된다.
+
+**Files:**
+- Test: `tests/buffs.test.ts` (기존 파일에 describe 블록 추가)
+
+**Interfaces:** Consumes: `setActiveBuff`·`getActiveBuff`·`clearBuff`(Task 2), `clearMutation`·`applyMutation`(`src/game/mutations.ts`)
+
+- [ ] **Step 1: 회귀 테스트 추가** — `tests/buffs.test.ts` 끝에 붙인다. `clearMutation`은 시그니처가 `(_scene: ArenaScene)`이고 인자를 사용하지 않으므로 더미를 넘겨도 안전하다.
+
+```ts
+import { clearMutation } from '../src/game/mutations';
+
+describe('누적 방지 — clearMutation이 buff를 리셋한다', () => {
+  it('mutation이 NONE이라 state가 없는 웨이브에서도 리셋된다', () => {
+    // clearBuff()가 `if (!state) return;` 가드 뒤로 옮겨지면 이 테스트가 깨진다.
+    setActiveBuff('TOUGH');
+    clearMutation(null as never);
+    expect(getActiveBuff()).toBe('NONE');
+  });
+
+  it('연속 호출해도 NONE을 유지한다', () => {
+    setActiveBuff('VOLATILE');
+    clearMutation(null as never);
+    clearMutation(null as never);
+    expect(getActiveBuff()).toBe('NONE');
+  });
+});
+```
+
+- [ ] **Step 2: 가드 위치를 바꿔 테스트가 실제로 깨지는지 확인(RED 검증)**
+
+`src/game/mutations.ts`의 `clearBuff();`를 일시적으로 `if (!state) return;` **아래**로 옮기고 `npx vitest run tests/buffs.test.ts` 실행 → 첫 테스트가 FAIL 해야 한다. 확인 후 **반드시 원위치**로 되돌리고 다시 실행해 PASS를 확인한다. 이 단계를 건너뛰면 테스트가 회귀를 잡는다는 보장이 없다.
+
+- [ ] **Step 3: 커밋**
+
+Run: `bash scripts/ai_harness.sh --fast` → PASS
+
+```bash
+git add -A && git commit -m "test: 카드 누적 방지 회귀 테스트 — clearMutation의 clearBuff 위치 고정
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 4: 제출 문서 갱신
 
 **Files:**
