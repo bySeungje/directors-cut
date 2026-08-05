@@ -145,23 +145,45 @@ echo "HARNESS RESULT: PASS"
 
 - [ ] **Step 4: Pages 배포 워크플로** (`.github/workflows/deploy.yml`)
 
+*(개정 2026-08-05: 초안은 `{ }` 축약 표기 안에 `${{ }}` 표현식을 따옴서 없이 넣어 YAML 파싱이 깨졌다 — Actions가 0초 만에 "workflow file issue"로 실패. block style로 전면 교체하고 실배포로 검증했다. Pages는 첫 배포 전 `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`로 활성화해야 한다.)*
+
 ```yaml
 name: deploy
-on: { push: { branches: [main] } }
-permissions: { contents: read, pages: write, id-token: write }
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: { name: github-pages, url: ${{ steps.deployment.outputs.page_url }} }
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          VITE_DIRECTOR_URL: ${{ vars.VITE_DIRECTOR_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
-        with: { path: dist }
+        with:
+          path: dist
       - id: deployment
         uses: actions/deploy-pages@v4
 ```
