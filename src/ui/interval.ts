@@ -55,12 +55,19 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
   let picked = false; // 카드 클릭과 숫자키가 동시에 들어와도 onDone이 한 번만 불리게
 
   const cleanup = () => {
+    scene.events.off('player-died', onPlayerDiedDuringInterval);
     scene.input.off('pointerdown', skipTyping);
     for (const { event } of PICK_KEYS) scene.input.keyboard!.off(event);
     for (const t of timers) scene.time.removeEvent(t);
     scene.tweens.killTweensOf(objects); // 카드 선택 시 호버 확대 트윈이 아직 진행 중일 수 있어 파괴 전에 멈춘다
     for (const o of objects) o.destroy();
   };
+
+  // 인터벌 중(주로 대사 타이핑 단계)에도 잔여 적탄으로 사망할 수 있다 — ArenaScene은 그 경우 onDone을
+  // 호출하지 않도록 자체 가드를 갖고 있지만, 그것만으로는 이미 그려진 대사·카드가 화면에 계속 남아
+  // 클릭 가능한 상태로 방치된다(리뷰 지적: 죽은 플레이어 위에 유령 UI). 여기서도 즉시 정리한다.
+  const onPlayerDiedDuringInterval = () => cleanup();
+  scene.events.once('player-died', onPlayerDiedDuringInterval);
 
   // ── 오버레이(정지된 아레나를 덮어 인터벌 모드임을 표시) + 상단 라벨 ────
   track(

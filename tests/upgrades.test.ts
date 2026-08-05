@@ -28,4 +28,20 @@ describe('upgrades', () => {
 
     expect(before).toEqual(FIXTURE_STATS); // apply가 인자로 받은 stats를 건드리지 않았는지(불변성) 확인
   });
+
+  // 8종 효과값은 브리프 3.2 명시 수치 그대로다 — 리뷰에서 지적된 대로 DAMAGE_UP·HP_PLUS 외 6종도 개별 검증한다.
+  it('8종 업그레이드 효과값이 브리프 명시 수치와 정확히 일치한다', () => {
+    const s = { ...FIXTURE_STATS };
+    expect(UPGRADES.FIRE_RATE_UP.apply(s).fireRateMs).toBeCloseTo(s.fireRateMs * 0.85);
+    expect(UPGRADES.MOVE_SPEED_UP.apply(s).moveSpeed).toBeCloseTo(s.moveSpeed * 1.12);
+    expect(UPGRADES.PIERCE.apply(s).pierce).toBe(s.pierce + 1);
+    expect(UPGRADES.MULTI_SHOT.apply(s).multishot).toBe(s.multishot + 1);
+    expect(UPGRADES.BULLET_SPEED_UP.apply(s).bulletSpeed).toBeCloseTo(s.bulletSpeed * 1.2);
+    expect(UPGRADES.DASH_CD_DOWN.apply(s).dashCooldownMs).toBeCloseTo(s.dashCooldownMs * 0.8);
+  });
+
+  it('HP_PLUS는 상한(8) 이상으로 maxHp를 올리지 않는다', () => {
+    const capped = { ...FIXTURE_STATS, maxHp: 8 };
+    expect(UPGRADES.HP_PLUS.apply(capped).maxHp).toBe(8);
+  });
 });
