@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TitleScene } from './game/scenes/TitleScene';
 import { ArenaScene } from './game/scenes/ArenaScene';
+import { EndScene } from './game/scenes/EndScene';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -8,7 +9,7 @@ const game = new Phaser.Game({
   height: 640,
   backgroundColor: '#0a0a0f',
   physics: { default: 'arcade' },
-  scene: [TitleScene, ArenaScene],
+  scene: [TitleScene, ArenaScene, EndScene],
 });
 
 // dev QA 훅(브리프 Task 8 Step 3.5) — 원격 플레이 중 백그라운드 탭 RAF 정지로 수동 진행이 막히는 문제 대응.

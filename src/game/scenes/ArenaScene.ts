@@ -271,16 +271,21 @@ export class ArenaScene extends Phaser.Scene {
     runDirective(this, d);
   }
 
-  private onWaveCleared = (wave: number) => {
+  /** onWaveCleared·onPlayerDied가 공유하는 웨이브 로그 스냅샷. finish()가 반환하는 damageSources/combat.kills는
+   *  WaveTelemetry 내부 객체의 라이브 참조라 얕은 복사로 분리해둔다(값이 전부 원시 number라 얕은 복사=완전한
+   *  분리) — 그렇지 않으면 인터벌 중 recordDamage/recordKill이 이미 push된 이 로그를 사후 변조한다. */
+  private snapshotCurrentWaveLog(wave: number): WaveLog {
     const clearTimeSec = (this.time.now - this.waveStartAt) / 1000;
     this.mutationHistory.push(this.activeMutation);
     const log = this.telemetry.finish(wave, clearTimeSec, [...this.chosenUpgrades], [...this.mutationHistory]);
-    // finish()가 반환하는 damageSources/combat.kills는 WaveTelemetry 내부 객체의 라이브 참조라
-    // 텔레메트리를 교체하기 전에 얕은 복사로 분리해둔다(값이 전부 원시 number라 얕은 복사=완전한 분리).
-    // 그렇지 않으면 인터벌 중 recordDamage/recordKill이 이미 push된 이 로그를 사후 변조한다.
     log.damageSources = { ...log.damageSources };
     log.combat = { ...log.combat, kills: { ...log.combat.kills } };
     log.hpLost = this.hpLostThisWave; // damageSources 합산 대신 실제 피격 횟수(mutation 피해 포함)로 보정
+    return log;
+  }
+
+  private onWaveCleared = (wave: number) => {
+    const log = this.snapshotCurrentWaveLog(wave);
     this.waveLogs.push(log);
     this.prevMutation = this.activeMutation;
     clearMutation(this);
@@ -293,6 +298,7 @@ export class ArenaScene extends Phaser.Scene {
     if (wave >= FINAL_WAVE) {
       this.runEnded = true;
       console.log('[ArenaScene] WIN');
+      this.endRun('WIN');
       return;
     }
 
@@ -320,7 +326,18 @@ export class ArenaScene extends Phaser.Scene {
     if (this.runEnded) return;
     this.runEnded = true;
     console.log('[ArenaScene] LOSE');
+    this.endRun('LOSE');
   };
+
+  /** 런 종료 — EndScene으로 전환하며 리포트 조립에 필요한 원재료(웨이브 로그·업그레이드 이력)를 넘긴다.
+   *  배열은 복사본을 넘긴다 — EndScene이 들고 있는 동안 이 씬의 필드가 다음 런을 위해 리셋돼도 안전하게. */
+  private endRun(result: 'WIN' | 'LOSE') {
+    this.scene.start('EndScene', {
+      result,
+      waveLogs: [...this.waveLogs],
+      upgrades: [...this.chosenUpgrades],
+    });
+  }
 
   /** 수동 검증(브리프 Step 3)용 — devtools 콘솔에서 window.spawnStress(50) 실행 */
   private exposeStressSpawnHook() {
