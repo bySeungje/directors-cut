@@ -1,6 +1,6 @@
 # DIRECTOR'S CUT — 프로젝트 규약
 
-NAN 2026 사전과제 제출용 웹 게임 (Phaser 3 + TypeScript + Vite).
+NAN 2026 사전과제 제출용 웹 게임 (Phaser 4 + TypeScript + Vite).
 
 - **스펙 SSOT:** `docs/specs/nan2026-submission.md` (frozen). 구현 플랜: `docs/plans/nan2026-submission.md`.
 - **계약 SSOT:** `src/contracts/directive.ts` — 디렉티브 타입·zod 스키마·예산표. engine은 이 타입만 알고 director/의 내부(LLM인지 뱅크인지)를 모른다.

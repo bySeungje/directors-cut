@@ -39,7 +39,9 @@ export interface WaveLog {
 export const ENEMY_COST: Record<EnemyType, number> = { chaser: 1, shooter: 2, splitter: 2 };
 export const ELITE_MULT = 3;
 
-// API structured output용 (zod와 동일 제약 — 프록시에서 사용)
+// API structured output용 (프록시에서 사용). Anthropic structured outputs는 minimum/maximum/maxLength/minItems를
+// 지원하지 않아 위 zod 스키마와의 완전한 파리티는 원리적으로 불가능하다 — 범위를 벗어난 응답은 validateDirective가
+// 걸러 폴백으로 전환한다(설계된 이중 검증, src/director/validator.ts).
 export const DIRECTIVE_JSON_SCHEMA = {
   type: 'object',
   properties: {
