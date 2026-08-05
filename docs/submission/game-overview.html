@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>DIRECTOR'S CUT — 게임 소개 및 설명</title>
+<style>
+  :root {
+    --red: #a3132d;
+    --red-tint: #fbeced;
+    --ink: #1a1a1a;
+    --gray: #5a5a5a;
+    --line: #c9c9c9;
+    --line-dark: #9a9a9a;
+  }
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 18mm; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Apple SD Gothic Neo", sans-serif;
+    color: var(--ink);
+    font-size: 12.5px;
+    line-height: 1.65;
+    background: #fff;
+  }
+  h1, h2, h3 { font-family: "Apple SD Gothic Neo", sans-serif; font-weight: 700; margin: 0; }
+  p { margin: 0 0 8px; }
+
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .badge {
+    width: 30px; height: 30px; background: var(--red); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px; flex-shrink: 0;
+  }
+  h1 { font-size: 26px; letter-spacing: 0.3px; }
+  .doc-sub { font-size: 11px; color: var(--gray); margin: 0 0 16px 40px; }
+
+  .tagline {
+    border: 1.5px solid var(--red);
+    background: var(--red-tint);
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 16px;
+    break-inside: avoid;
+  }
+
+  section { margin-bottom: 16px; break-inside: avoid; }
+  h2 {
+    font-size: 14px;
+    color: var(--red);
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }
+  h3 { font-size: 12.5px; margin: 10px 0 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 6px 0; }
+  th, td { border: 1px solid var(--line-dark); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; font-weight: 700; width: 30%; }
+
+  .link-grid { display: flex; gap: 12px; margin-top: 6px; }
+  .link-box {
+    flex: 1; border: 1.5px solid var(--ink); padding: 10px 12px;
+  }
+  .link-box.placeholder { border: 1.5px dashed var(--line-dark); }
+  .link-label { font-size: 10.5px; color: var(--gray); font-weight: 700; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .link-url { font-size: 12px; word-break: break-all; }
+  a { color: var(--red); text-decoration: none; font-weight: 700; }
+  .ph { color: var(--gray); font-weight: 700; }
+
+  footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--gray); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">D</div>
+  <h1>DIRECTOR'S CUT</h1>
+</header>
+<p class="doc-sub">NAN 2026 사전과제 제출물 — 게임 소개 및 설명</p>
+
+<div class="tagline">
+  당신의 플레이를 읽고 판을 다시 짜는 AI 디렉터와 7웨이브 동안 싸우는 웹 미니 서바이벌
+</div>
+
+<section>
+  <h2>게임 소개</h2>
+  <p>
+    탑다운 아레나에서 3종의 적과 7웨이브를 치르는 미니 서바이벌. 매 웨이브 종료 시
+    AI 디렉터가 방금 끝난 웨이브의 플레이 로그 — 이동 습관, 피격 원인, 명중률, 대시 횟수 —
+    를 읽고 다음 웨이브를 새로 설계. 적 구성과 물량, 아레나 변주(용암·안개·축소 등 7종),
+    그리고 실제로 관찰된 습관 하나를 콕 집는 도발 대사까지 매 판 새로 구성.
+    같은 방식으로 두 번 플레이해도 디렉터의 대응은 매번 다름 — 상대는 고정된 스크립트가 아니라
+    지금 이 판을 보고 있는 AI.
+  </p>
+</section>
+
+<section>
+  <h2>게임 방법</h2>
+  <h3>목표</h3>
+  <p>7웨이브 동안 생존, AI 디렉터가 설계하는 적 구성과 변주를 뚫고 끝까지 클리어.</p>
+
+  <h3>조작</h3>
+  <table>
+    <tr><th>입력</th><td>동작</td></tr>
+    <tr><th>W A S D</th><td>이동</td></tr>
+    <tr><th>(자동)</th><td>사격 — 가장 가까운 적을 자동 조준</td></tr>
+    <tr><th>Space</th><td>대시 — 무적 프레임 0.3초, 쿨다운 2초</td></tr>
+    <tr><th>1 / 2 / 3 · 클릭</th><td>업그레이드 카드 선택(웨이브 사이 인터벌 중, 3택 1)</td></tr>
+    <tr><th>R · 클릭</th><td>재시작(종료 화면에서)</td></tr>
+    <tr><th>M</th><td>음소거 토글</td></tr>
+  </table>
+
+  <h3>종료 조건</h3>
+  <p>
+    웨이브 클리어: 웨이브 내 적을 모두 처치하면 자동으로 다음 인터벌로 전환.
+    런 종료: 7웨이브 전부 클리어 시 승리("디렉터 격파"), 체력 0 시 패배 —
+    어느 쪽이든 디렉터가 쓰는 플레이 분석 리포트와 칭호로 마무리, 재시작은 1클릭.
+  </p>
+</section>
+
+<section>
+  <h2>실행 방법</h2>
+  <p>
+    설치·회원가입·로그인 없음. 아래 플레이 링크 클릭 시 브라우저에서 즉시 시작.
+    권장 환경: 데스크톱·노트북 브라우저(Chrome 등 최신 브라우저), 키보드 입력 기반.
+  </p>
+</section>
+
+<section>
+  <h2>링크</h2>
+  <div class="link-grid">
+    <div class="link-box">
+      <div class="link-label">플레이 링크</div>
+      <div class="link-url"><a href="https://byseungje.github.io/directors-cut/">https://byseungje.github.io/directors-cut/</a></div>
+    </div>
+    <div class="link-box placeholder">
+      <div class="link-label">플레이 영상</div>
+      <div class="link-url ph">【영상 링크 — 업로드 후 기입】</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  전체 소스와 AI 활용 방식은 별도 제출된 「AI 활용 기술 문서」에 수록.
+</footer>
+
+</body>
+</html>
