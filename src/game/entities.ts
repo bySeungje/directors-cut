@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -316,8 +317,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const off = texSize / 2 - def.size;
     this.setCircle(def.size, off, off);
 
-    this.hp = opts?.hpOverride ?? (elite ? def.hp * ELITE_HP_MULT : def.hp);
-    this.moveSpeed = elite ? def.speed * ELITE_SPEED_MULT : def.speed;
+    this.hp = opts?.hpOverride ?? buffedHp(type, elite ? def.hp * ELITE_HP_MULT : def.hp);
+    this.moveSpeed = buffedSpeed(type, elite ? def.speed * ELITE_SPEED_MULT : def.speed);
     this.setTint(elite ? ELITE_COLOR : 0xffffff);
     this.setAlpha(1);
 
@@ -363,17 +364,18 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   ) {
     const dist = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
     const angleToPlayer = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
+    const keep = buffedKeepDistance(SHOOTER_KEEP_DISTANCE);
 
-    if (dist < SHOOTER_KEEP_DISTANCE - SHOOTER_DEADZONE) {
+    if (dist < keep - SHOOTER_DEADZONE) {
       this.scene.physics.velocityFromRotation(angleToPlayer + Math.PI, this.moveSpeed, this.body.velocity);
-    } else if (dist > SHOOTER_KEEP_DISTANCE + SHOOTER_DEADZONE) {
+    } else if (dist > keep + SHOOTER_DEADZONE) {
       this.scene.physics.velocityFromRotation(angleToPlayer, this.moveSpeed, this.body.velocity);
     } else {
       this.body.setVelocity(0, 0);
     }
     this.setRotation(angleToPlayer);
 
-    if (time - this.lastFireAt >= SHOOTER_FIRE_INTERVAL_MS) {
+    if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) {
       this.lastFireAt = time;
       fireEnemyBullet(this.x, this.y, angleToPlayer, 'shooter');
     }
