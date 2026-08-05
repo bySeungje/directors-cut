@@ -215,6 +215,7 @@
     {"type": "chaser|shooter|splitter", "count": 1, "spawn": "N|S|E|W|RING|PINCER|BEHIND", "elite": false}
   ],
   "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
+  "buff": "NONE|TOUGH|SWIFT|RELENTLESS|RAPID_FIRE|MARKSMAN|VOLATILE",
   "taunt": "60자 이내 — 로그의 실제 습관 1개 지목",
   "intent": "100자 이내 — 설계 의도"
 }</pre>
@@ -237,8 +238,19 @@
   타는 플레이어에게는 그 습관을 지목할 수 있다.
 - 직전 mutation과 같은 것은 고르지 마라.
 - 어렵지만 이길 수 있게: 플레이어가 고전한 요소는 유지하되 물량으로 압살하지 마라.
-- intent는 설계 의도 100자 이내.</pre>
-  <p class="footnote">사용자 메시지: <code class="inline">웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}.</code> + 플레이 로그 JSON.</p>
+- intent는 설계 의도 100자 이내.
+- buff는 적의 성능을 조정하는 강화 카드다. 로그에서 관찰된 플레이어의 강점을 무력화하는 카드를 골라라:
+    TOUGH(전 적 HP +1) — 명중률이 높을 때
+    SWIFT(전 적 이속 +25%) — 클리어 시간이 길고 거리를 벌리며 놀 때
+    RELENTLESS(chaser 이속 +45%, HP -1) — 대시를 남용할 때
+    RAPID_FIRE(shooter 발사 간격 40% 단축) — 피격이 적고 탄을 잘 피할 때
+    MARKSMAN(shooter 탄속 +50%, 유지거리 +80) — 벽에 붙지 않고 원거리 안전지대를 쓸 때
+    VOLATILE(splitter 분열 2->3기) — 분열형 처치가 많고 물량 처리가 능숙할 때
+    NONE — 강화 없이 구성만으로 압박할 때
+- 강화 카드는 비용이 든다: NONE이 아니면 예산의 25%가 차감되므로 적 수를 그만큼 줄여야 한다.
+- 직전 웨이브와 같은 카드는 고르지 마라.
+- intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.</pre>
+  <p class="footnote">사용자 메시지: <code class="inline">웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}. 직전 buff: ${prevBuff}.</code> + 플레이 로그 JSON.</p>
 
   <h3>리포트 생성 (mode: 'report')</h3>
   <pre>너는 게임의 AI 디렉터다. 방금 끝난 판의 전체 로그를 보고, 플레이어의 스타일을 분석하는 리포트를
@@ -255,10 +267,11 @@
 <section>
   <h2>1.4 권한 경계 설계</h2>
   <p>
-    디렉터에게 준 것은 코드가 아니라 어휘다. composition·mutation·taunt·intent 네 필드 바깥으로는
+    디렉터에게 준 것은 코드가 아니라 어휘다. composition·mutation·buff·taunt·intent 다섯 필드 바깥으로는
     어떤 값도 낼 수 없고, 그 안에서도 API 스키마(서버)와 zod(클라이언트) 두 번을 거쳐야 엔진에 닿는다.
-    이렇게 설계한 이유는 하나다 — 심사자가 이 게임을 직접 플레이하는 동안 LLM 쪽에서 무슨 일이 나도
-    게임이 멈추면 안 된다.
+    강화 카드도 같은 원칙을 따른다 — 디렉터는 적 구성뿐 아니라 적 성능도 조정하되, 수치는 정하지 못하고
+    카드만 고른다. 이렇게 설계한 이유는 하나다 — 심사자가 이 게임을 직접 플레이하는 동안 LLM 쪽에서 무슨
+    일이 나도 게임이 멈추면 안 된다.
   </p>
   <table>
     <tr><th style="width:16%">층위</th><th>규칙</th></tr>
@@ -266,6 +279,7 @@
     <tr><td>예산</td><td><code class="inline">budgetFor(wave) = 8 + wave×4 + max(0, wave−5)×12</code> 이하만 허용(비용: chaser 1·shooter 2·splitter 2, elite ×3). 난이도 곡선을 LLM이 깨뜨릴 수 없다</td></tr>
     <tr><td>반복</td><td>직전 mutation과 동일하면 검증 계층이 NONE으로 강제 교체</td></tr>
     <tr><td>시간</td><td>4초 초과·네트워크 오류·검증 실패 → 사전 제작 폴백 뱅크(웨이브별 3종×6 + 오프닝 1)에서 무작위 선택. 대사도 뱅크에 포함돼 있어 플레이어는 폴백 여부를 알 수 없다</td></tr>
+    <tr><td>강화 카드</td><td>어휘 7종 enum(NONE·TOUGH·SWIFT·RELENTLESS·RAPID_FIRE·MARKSMAN·VOLATILE) 중 1개만 허용. 비용은 해당 웨이브 예산의 25%(반올림, NONE은 0)가 자동 차감돼 물량이 그만큼 준다. 직전 웨이브와 동일 카드 금지 — 위반 시 NONE으로 강제 교체. 웨이브 종료 시 초기화돼 절대 누적되지 않는다</td></tr>
   </table>
   <p>
     이 경계는 실측으로 확인했다. 장애 경로(네트워크 오류·타임아웃·스키마 위반)는 유닛 테스트 4건에
@@ -274,7 +288,9 @@
     들어있는 디렉티브 19개(오프닝 1 + 웨이브별 3종×6) 전수 검증으로 확인했다. 적 58기가 동시에 활성인
     상태에서 프레임당 처리 비용은 평균 0.145ms(60fps 예산 16.7ms 대비 약 115배 여유)로, 디렉터가 물량을
     늘려도 프레임이 무너질 여지는 작다. 세션당 호출 20회·일일 500회 캡은 경계값 시뮬레이션으로
-    확인했다(21회째부터 거부, 501회째부터 거부).
+    확인했다(21회째부터 거부, 501회째부터 거부). 강화 카드도 같은 방식으로 라이브 검증했다 — 카드별
+    스탯 반영(예: TOUGH HP +1, SWIFT 이속 ×1.25, RELENTLESS chaser 이속 ×1.45·HP −1)과 적용 순서
+    (기본값 → elite 배수 → 강화 카드), 웨이브 클리어 시 초기화돼 다음 웨이브로 누적되지 않음을 확인했다.
   </p>
   <div class="callout">
     <div class="callout-label">설계 사례 — 계약을 바꾸지 않고 프롬프트로 푼 문제</div>
