@@ -31,9 +31,9 @@ const FINAL_WAVE = 7;
 const WIN_TRANSITION_DELAY_MS = 600;
 const LOSE_TRANSITION_DELAY_MS = 500;
 
-/** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true */
+/** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
 function isGodMode(): boolean {
-  return (window as unknown as { __god?: boolean }).__god === true;
+  return import.meta.env.DEV && (window as unknown as { __god?: boolean }).__god === true;
 }
 
 export class ArenaScene extends Phaser.Scene {
@@ -131,9 +131,11 @@ export class ArenaScene extends Phaser.Scene {
     // 웨이브 루프 시작 — 웨이브 1은 항상 고정 오프닝(로그가 아직 없음). 이후는 onWaveCleared가 이어간다.
     this.beginWave(OPENING_WAVE);
 
-    this.exposeStressSpawnHook();
-    if (import.meta.env.DEV) this.exposeDevQaHooks();
-    console.log('[ArenaScene] 무적 검증: devtools 콘솔에서 window.__god = true 실행');
+    if (import.meta.env.DEV) {
+      this.exposeStressSpawnHook();
+      this.exposeDevQaHooks();
+      console.log('[ArenaScene] 무적 검증: devtools 콘솔에서 window.__god = true 실행');
+    }
   }
 
   update(time: number, delta: number) {
@@ -386,19 +388,22 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  /** 수동 검증(브리프 Step 3)용 — devtools 콘솔에서 window.spawnStress(50) 실행 */
+  /** 수동 검증(브리프 Step 3)용 — devtools 콘솔에서 window.spawnStress(50) 실행. 본문 전체를 DEV 가드로
+   *  감싼다 — 호출부만 가드하면 esbuild가 클래스 메서드 본문(문자열 포함)은 지우지 않는다(F1 fix). */
   private exposeStressSpawnHook() {
-    const win = window as unknown as { spawnStress?: (n?: number) => void };
-    win.spawnStress = (n = 50) => {
-      for (let i = 0; i < n; i++) {
-        const type = STRESS_TYPES[i % STRESS_TYPES.length];
-        const x = Phaser.Math.Between(40, this.scale.width - 40);
-        const y = Phaser.Math.Between(40, this.scale.height - 40);
-        this.spawnEnemy(type, x, y, false);
-      }
-      console.log(`[ArenaScene] stress spawn +${n} (활성 적: ${this.enemies.countActive(true)})`);
-    };
-    console.log('[ArenaScene] perf 검증: devtools 콘솔에서 window.spawnStress(50) 실행');
+    if (import.meta.env.DEV) {
+      const win = window as unknown as { spawnStress?: (n?: number) => void };
+      win.spawnStress = (n = 50) => {
+        for (let i = 0; i < n; i++) {
+          const type = STRESS_TYPES[i % STRESS_TYPES.length];
+          const x = Phaser.Math.Between(40, this.scale.width - 40);
+          const y = Phaser.Math.Between(40, this.scale.height - 40);
+          this.spawnEnemy(type, x, y, false);
+        }
+        console.log(`[ArenaScene] stress spawn +${n} (활성 적: ${this.enemies.countActive(true)})`);
+      };
+      console.log('[ArenaScene] perf 검증: devtools 콘솔에서 window.spawnStress(50) 실행');
+    }
   }
 
   private createHud() {
@@ -446,12 +451,15 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   /** dev QA 훅(브리프 Task 8 Step 3.5) — 원격 플레이 중 백그라운드 탭은 requestAnimationFrame이 멈춰
-   *  수동 진행이 불가능하다는 게 확인돼 추가됐다. import.meta.env.DEV는 빌드 타임 상수로 치환되므로
-   *  이 메서드 자체는 프로덕션 빌드에서도 남지만, 호출부(create())가 dead-code로 제거돼 실행되지 않는다. */
+   *  수동 진행이 불가능하다는 게 확인돼 추가됐다. 메서드 이름은 클래스 멤버라 프로덕션 빌드에도 남지만,
+   *  본문을 DEV 가드로 감싸 프로덕션에서는 빈 함수로 축소된다 — 호출부만 가드하면 esbuild가 이 안의
+   *  문자열까지는 지우지 않아 본문도 함께 가드했다(F1 fix). */
   private exposeDevQaHooks() {
-    const win = window as unknown as { __skipWave?: () => void };
-    win.__skipWave = () => this.skipWave();
-    console.log('[ArenaScene] dev QA: devtools 콘솔에서 window.__skipWave() 실행 (현재 웨이브 즉시 클리어)');
+    if (import.meta.env.DEV) {
+      const win = window as unknown as { __skipWave?: () => void };
+      win.__skipWave = () => this.skipWave();
+      console.log('[ArenaScene] dev QA: devtools 콘솔에서 window.__skipWave() 실행 (현재 웨이브 즉시 클리어)');
+    }
   }
 
   /** 현재 웨이브의 활성 적을 전멸 처리해 일반 킬과 동일한 경로(checkWaveClear 게이트 포함)로 wave-cleared를
