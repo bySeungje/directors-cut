@@ -508,7 +508,20 @@ Run: `npx vitest run tests/fallbackBank.test.ts` → PASS
 Run: `bash scripts/ai_harness.sh --full` → PASS
 Run: `deno check --node-modules-dir=none supabase/functions/director/index.ts` (실패 시 리포트에 명시)
 
-라이브 확인(dev 서버 + Chrome, `window.__game.loop.step()`로 프레임 수동 전진): 오프라인 폴백 상태에서 7웨이브 완주가 여전히 가능한지, 콘솔 오류가 없는지. **추가로 버프 실효 확인**: devtools에서 `import` 없이 확인이 어려우므로, 임시로 `window.__setBuff`를 dev 가드 안에 노출해 `TOUGH`·`RELENTLESS`·`VOLATILE`을 각각 적용한 뒤 적 HP·이속·분열 수가 실제로 바뀌는지 관찰하고, **확인 후 그 임시 훅을 제거**한다(프로덕션 번들 오염 방지 — 기존 dev 훅과 같은 `import.meta.env.DEV` 가드 규칙을 따를 것).
+**dev 훅 `__setBuff` 추가** *(플랜 개정 2026-08-05 — 임시 훅 후 제거 → 영구 dev 훅으로 변경)*: 카드를 강제 적용하는 훅을 dev 전용으로 **영구 노출**한다. 이유는 둘이다 — (1) 승제의 밸런싱 세션에서 카드 7종을 각각 체감하려면 강제 수단이 필요한데, 없으면 디렉터가 그 카드를 고를 때까지 기다려야 한다. (2) "확인 후 제거"는 제거를 잊으면 프로덕션이 오염되는 절차 의존 방어다.
+
+기존 dev 훅과 **동일한 가드 규칙**을 따를 것 — 호출부뿐 아니라 **메서드/함수 본문까지** `import.meta.env.DEV`로 감싼다. 콜사이트만 가드하면 클래스 프라이빗 메서드의 본문 문자열이 트리쉐이킹되지 않아 프로덕션 번들에 남는다(이 프로젝트에서 실제로 겪은 회귀다).
+
+```ts
+    if (import.meta.env.DEV) {
+      (window as any).__setBuff = (card: BuffCard) => {
+        setActiveBuff(card);
+        console.log('[dev] buff =', card);
+      };
+    }
+```
+
+라이브 확인(dev 서버 + Chrome, `window.__game.loop.step()`로 프레임 수동 전진)은 **컨트롤러가 직접 수행**한다 — 구현 에이전트는 코드와 하네스까지만 책임진다.
 
 ```bash
 git add -A && git commit -m "feat: 강화 카드 실행 연결 + 프록시 프롬프트·스키마
