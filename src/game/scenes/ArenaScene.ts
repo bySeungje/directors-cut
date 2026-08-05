@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { Directive, EnemyType, Mutation, WaveLog } from '../../contracts/directive';
-import { OPENING_WAVE, pickFallback } from '../../director/fallbackBank';
+import { OPENING_WAVE } from '../../director/fallbackBank';
 import { WaveTelemetry } from '../../telemetry/collector';
 import { Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures } from '../entities';
 import { runDirective } from '../waveRunner';
 import { clearMutation, updateMutation } from '../mutations';
+import { requestDirective } from '../../director/client';
 
 const STRESS_TYPES: EnemyType[] = ['chaser', 'shooter', 'splitter'];
 
@@ -14,7 +15,8 @@ const SPLITTER_MINI_SCALE = 0.6;
 
 const HUD_DEPTH = 1000;
 
-// Step 3: "지금은 2초 대기 placeholder" — Task 8이 대사·업그레이드 연출로 교체 예정
+// 인터벌 최소 대기 — requestDirective(최대 4초 내 반드시 resolve)와 Promise.all로 경합해
+// 최소 이 값만큼은 보장하고, 그 사이 결과가 오면 그만큼만 기다린다. Task 8이 이 구간에 연출을 채울 예정.
 const INTERVAL_MS = 2000;
 const FINAL_WAVE = 7;
 
@@ -34,8 +36,10 @@ export class ArenaScene extends Phaser.Scene {
   waveLogs: WaveLog[] = [];
   /** Task 7·8이 소비 — 현재 진행 중인 웨이브 번호(1-indexed) */
   currentWave = 1;
-  /** Task 7이 소비 — 가장 최근에 완료된 웨이브의 mutation(다음 pickFallback 호출에 씀) */
+  /** Task 7이 소비 — 가장 최근에 완료된 웨이브의 mutation(다음 requestDirective 호출에 씀) */
   prevMutation: Mutation = 'NONE';
+  /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
+  lastDirectiveFromLLM = false;
 
   private playerBullets!: Phaser.Physics.Arcade.Group;
   private enemyBullets!: Phaser.Physics.Arcade.Group;
@@ -82,6 +86,7 @@ export class ArenaScene extends Phaser.Scene {
     this.mutationHistory = [];
     this.prevMutation = 'NONE';
     this.currentWave = 1;
+    this.lastDirectiveFromLLM = false;
     // telemetry/hpLostThisWave는 여기서 최초 1회 생성 — 이후로는 onWaveCleared가 웨이브 종료 즉시 교체한다
     // (beginWave에서 교체하면 인터벌 창의 잔여 피해가 이미 push된 이전 로그를 오염시킨다. F1 fix 참고)
     this.telemetry = new WaveTelemetry();
@@ -282,10 +287,18 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
-    this.time.delayedCall(INTERVAL_MS, () => {
+    // requestDirective는 웨이브 종료 즉시 시작(promise)하고, 기존 인터벌 최소 대기와 경합시킨다 —
+    // 둘 다 끝나야 다음 웨이브를 시작한다(최소 INTERVAL_MS는 보장, 디렉티브는 최대 4초 내 반드시 resolve).
+    // 오프라인·실패·검증 실패 시의 폴백은 requestDirective 내부에서 처리되므로 여기서 pickFallback을 직접 호출하지 않는다.
+    const nextWave = wave + 1;
+    const directivePromise = requestDirective(log, nextWave, this.prevMutation);
+    const minWaitPromise = new Promise<void>((resolve) => this.time.delayedCall(INTERVAL_MS, resolve));
+
+    Promise.all([directivePromise, minWaitPromise]).then(([{ directive, fromLLM }]) => {
       if (this.playerDead) return; // 인터벌 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
-      this.currentWave = wave + 1;
-      this.beginWave(pickFallback(this.currentWave, this.prevMutation));
+      this.currentWave = nextWave;
+      this.lastDirectiveFromLLM = fromLLM;
+      this.beginWave(directive);
     });
   };
 
