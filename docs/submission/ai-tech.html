@@ -386,12 +386,13 @@
     <tr><td>typescript</td><td>7.0.2</td><td>Apache-2.0</td><td>개발 도구 — 타입체크·빌드(dev)</td></tr>
     <tr><td>vite</td><td>8.2.0</td><td>MIT</td><td>빌드·개발 서버(dev)</td></tr>
     <tr><td>vitest</td><td>4.1.10</td><td>MIT</td><td>유닛 테스트 러너(dev)</td></tr>
-    <tr><td>@anthropic-ai/sdk</td><td>버전 미고정*</td><td>MIT</td><td>Edge Function의 Claude API 클라이언트</td></tr>
+    <tr><td>@anthropic-ai/sdk</td><td>0.115.0(고정)*</td><td>MIT</td><td>Edge Function의 Claude API 클라이언트</td></tr>
   </table>
   <p class="footnote">
     * Edge Function은 Deno 런타임에서 <code class="inline">npm:@anthropic-ai/sdk</code> 스펙 임포트를
-    버전 지정 없이 쓴다 — 배포 시점 레지스트리 최신판을 그대로 가져오며, 프론트엔드 의존성처럼
-    lockfile로 고정돼 있지 않다(본 문서 작성 시점 레지스트리 최신판 0.115.0, 라이선스 MIT 확인).
+    쓴다 — 프론트엔드 의존성처럼 lockfile로 관리되지 않아, 심사 기간(제출 8/10 ~ 본선 9/4~6) 중
+    상위 버전의 breaking change가 프록시를 깨뜨릴 위험을 막기 위해 정확 버전
+    (<code class="inline">npm:@anthropic-ai/sdk@0.115.0</code>)으로 고정했다.
   </p>
   <p>
     <b>AI 도구 사용 내역</b> — 개발 전 과정에서 쓴 AI 도구는 Claude Code(Claude Fable 5 / Opus 5)다.

@@ -1,4 +1,4 @@
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import Anthropic from 'npm:@anthropic-ai/sdk@0.115.0';
 
 // DIRECTIVE_JSON_SCHEMA — src/contracts/directive.ts에서 복사한 사본.
 // Edge Function은 별도 번들이라 소스 파일을 import할 수 없다 — 계약(directive.ts) 변경 시 이 블록도 수동 동기화할 것 (CLAUDE.md 명시).
