@@ -8,6 +8,7 @@ import {
 } from '../entities';
 import { runDirective } from '../waveRunner';
 import { clearMutation, updateMutation } from '../mutations';
+import { buffedSplitCount, buffedBulletSpeed, setActiveBuff } from '../buffs';
 import { requestDirective } from '../../director/client';
 import { runInterval } from '../../ui/interval';
 import { attachDirectorLog } from '../../ui/directorLog';
@@ -49,7 +50,8 @@ export class ArenaScene extends Phaser.Scene {
   currentWave = 1;
   /** Task 7이 소비 — 가장 최근에 완료된 웨이브의 mutation(다음 requestDirective 호출에 씀) */
   prevMutation: Mutation = 'NONE';
-  /** 가장 최근에 완료된 웨이브의 buff(다음 requestDirective 호출에 씀). 웨이브 종료 시 갱신하는 로직·리셋은 Task 3. */
+  /** 가장 최근에 완료된 웨이브의 buff(다음 requestDirective 호출에 씀) — 다음 디렉티브가 resolve되는 즉시(.then())
+   *  그 directive.buff로 갱신된다. 웨이브 종료 시 clearMutation→clearBuff로 활성 버프 자체는 별도로 리셋된다(waveRunner.ts). */
   prevBuff: BuffCard = 'NONE';
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
   lastDirectiveFromLLM = false;
@@ -106,6 +108,7 @@ export class ArenaScene extends Phaser.Scene {
     this.waveLogs = [];
     this.mutationHistory = [];
     this.prevMutation = 'NONE';
+    this.prevBuff = 'NONE';
     this.currentWave = 1;
     this.lastDirectiveFromLLM = false;
     this.lastDirective = OPENING_WAVE;
@@ -136,6 +139,7 @@ export class ArenaScene extends Phaser.Scene {
     if (import.meta.env.DEV) {
       this.exposeStressSpawnHook();
       this.exposeDevQaHooks();
+      this.exposeBuffDevHook();
       console.log('[ArenaScene] 무적 검증: devtools 콘솔에서 window.__god = true 실행');
     }
   }
@@ -213,7 +217,7 @@ export class ArenaScene extends Phaser.Scene {
   private fireEnemyBullet = (x: number, y: number, angle: number, sourceType: EnemyType) => {
     const b = this.enemyBullets.get() as Bullet | null;
     if (!b) return;
-    b.fire(x, y, angle, ENEMY_BULLET_SPEED, 1, 0, false, sourceType);
+    b.fire(x, y, angle, buffedBulletSpeed(ENEMY_BULLET_SPEED), 1, 0, false, sourceType);
   };
 
   private handlePlayerBulletHitEnemy = (bulletObj: unknown, enemyObj: unknown) => {
@@ -268,11 +272,14 @@ export class ArenaScene extends Phaser.Scene {
     killBurst(this, x, y, color);
 
     if (wasSplit) {
-      // 분열 위치: 임의 축 위 대칭 오프셋(재량 결정 — 브리프에 위치 명시 없음)
-      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      // 분열 위치: 임의 축 위 균등 분배 오프셋(VOLATILE이면 3기)
+      const base = Phaser.Math.FloatBetween(0, Math.PI * 2);
       const offset = ENEMY_DEF.splitter.size;
-      this.spawnMiniSplitter(x + Math.cos(angle) * offset, y + Math.sin(angle) * offset);
-      this.spawnMiniSplitter(x - Math.cos(angle) * offset, y - Math.sin(angle) * offset);
+      const n = buffedSplitCount();
+      for (let i = 0; i < n; i++) {
+        const a = base + (Math.PI * 2 * i) / n;
+        this.spawnMiniSplitter(x + Math.cos(a) * offset, y + Math.sin(a) * offset);
+      }
     }
 
     this.checkWaveClear();
@@ -350,6 +357,9 @@ export class ArenaScene extends Phaser.Scene {
       if (this.playerDead) return; // 인터벌 대기 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
       this.lastDirectiveFromLLM = fromLLM;
       this.lastDirective = directive;
+      // directive.buff는 검증을 거친 최종값이라 다음 웨이브가 실제로 실행할 buff와 동일하다 — 그 웨이브가
+      // 끝나 다음 requestDirective를 부를 때 "직전 buff"로 정확히 이 값을 참조하도록 미리 갱신해둔다.
+      this.prevBuff = directive.buff;
       runInterval(this, directive, (picked) => {
         if (this.playerDead) return; // 대사·카드 선택 중에도 잔여 피해로 사망할 수 있어 onDone에도 동일 가드
         this.chosenUpgrades.push(picked);
@@ -461,6 +471,22 @@ export class ArenaScene extends Phaser.Scene {
       const win = window as unknown as { __skipWave?: () => void };
       win.__skipWave = () => this.skipWave();
       console.log('[ArenaScene] dev QA: devtools 콘솔에서 window.__skipWave() 실행 (현재 웨이브 즉시 클리어)');
+    }
+  }
+
+  /** dev 훅(강화 카드 밸런싱용, 영구 노출 — 플랜 개정 2026-08-05·브리프 Step 6) — devtools 콘솔에서
+   *  window.__setBuff('TOUGH') 등으로 카드를 강제 적용한다. 디렉터가 그 카드를 실제로 고를 때까지 기다리지
+   *  않고도 7종을 각각 체감할 수 있어야 하므로 "확인 후 제거"가 아니라 영구 훅으로 유지한다. 본문 전체를
+   *  DEV 가드로 감싼다 — 호출부만 가드하면 esbuild가 클래스 프라이빗 메서드 본문(문자열 포함)은 지우지
+   *  않아 프로덕션 번들에 남는다(exposeDevQaHooks와 동일한 F1 fix 패턴). */
+  private exposeBuffDevHook() {
+    if (import.meta.env.DEV) {
+      const win = window as unknown as { __setBuff?: (card: BuffCard) => void };
+      win.__setBuff = (card: BuffCard) => {
+        setActiveBuff(card);
+        console.log('[dev] buff =', card);
+      };
+      console.log("[ArenaScene] 강화 카드 검증: devtools 콘솔에서 window.__setBuff('TOUGH') 실행");
     }
   }
 

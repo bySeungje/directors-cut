@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { Mutation } from '../contracts/directive';
 import type { Enemy } from './entities';
 import type { ArenaScene } from './scenes/ArenaScene';
+import { clearBuff } from './buffs';
 
 // ── 브리프 명시 수치 (Task 6 브리프 mutation 효과표) ─────────────────────
 const LAVA_DPS_PER_SEC = 0.5; // 체류 1초당 HP 0.5 누적, 1 도달 시 피격 처리
@@ -75,8 +76,11 @@ export function updateMutation(scene: ArenaScene, dt: number): void {
   }
 }
 
-/** 웨이브 종료 시 호출 — 시각 요소를 destroy하고 내부 상태를 리셋한다. */
+/** 웨이브 종료 시 호출 — 시각 요소를 destroy하고 내부 상태를 리셋한다. 강화 카드도 여기서 함께 초기화한다
+ *  (mutation이 NONE이라 `state`가 이미 null인 웨이브에도 clearBuff는 반드시 실행돼야 하므로 조기 return보다 앞에 둔다) —
+ *  웨이브 종료 시 mutation과 buff가 함께 리셋되어 누적이 구조적으로 불가능하다. */
 export function clearMutation(_scene: ArenaScene): void {
+  clearBuff();
   if (!state) return;
   for (const obj of state.disposables) obj.destroy();
   state = null;

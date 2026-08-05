@@ -20,10 +20,11 @@ const DIRECTIVE_JSON_SCHEMA = {
       },
     },
     mutation: { type: 'string', enum: ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] },
+    buff: { type: 'string', enum: ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE'] },
     taunt: { type: 'string' },
     intent: { type: 'string' },
   },
-  required: ['composition', 'mutation', 'taunt', 'intent'],
+  required: ['composition', 'mutation', 'buff', 'taunt', 'intent'],
   additionalProperties: false,
 } as const;
 
@@ -46,7 +47,18 @@ const SYSTEM = `너는 아케이드 게임의 'AI 디렉터'다. 플레이어의
 - 해석 규칙: hpLost가 damageSources 합보다 크면 그 차이는 지형 피해(용암 존·축소 경계)다 — 지형에 자주 타는 플레이어에게는 그 습관을 지목할 수 있다.
 - 직전 mutation과 같은 것은 고르지 마라.
 - 어렵지만 이길 수 있게: 플레이어가 고전한 요소는 유지하되 물량으로 압살하지 마라.
-- intent는 설계 의도 100자 이내.`;
+- intent는 설계 의도 100자 이내.
+- buff는 적의 성능을 조정하는 강화 카드다. 로그에서 관찰된 플레이어의 강점을 무력화하는 카드를 골라라:
+    TOUGH(전 적 HP +1) — 명중률이 높을 때
+    SWIFT(전 적 이속 +25%) — 클리어 시간이 길고 거리를 벌리며 놀 때
+    RELENTLESS(chaser 이속 +45%, HP -1) — 대시를 남용할 때
+    RAPID_FIRE(shooter 발사 간격 40% 단축) — 피격이 적고 탄을 잘 피할 때
+    MARKSMAN(shooter 탄속 +50%, 유지거리 +80) — 벽에 붙지 않고 원거리 안전지대를 쓸 때
+    VOLATILE(splitter 분열 2->3기) — 분열형 처치가 많고 물량 처리가 능숙할 때
+    NONE — 강화 없이 구성만으로 압박할 때
+- 강화 카드는 비용이 든다: NONE이 아니면 예산의 25%가 차감되므로 적 수를 그만큼 줄여야 한다.
+- 직전 웨이브와 같은 카드는 고르지 마라.
+- intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.`;
 
 Deno.serve(async (req) => {
   const cors = {
@@ -56,7 +68,7 @@ Deno.serve(async (req) => {
   };
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
   try {
-    const { mode, log, wave, budget, prevMutation, sessionId, runSummary, warmup } = await req.json();
+    const { mode, log, wave, budget, prevMutation, prevBuff, sessionId, runSummary, warmup } = await req.json();
     const used = sessionCounts.get(sessionId) ?? 0;
     // warmup(타이틀 사전 호출)은 세션 상한에 산입하지 않는다 — 단, 남용 방지를 위해 일일 캡 검사(overDailyCap)는
     // warmup도 동일하게 받는다(스펙 3.4 amendment). 세션 캡에 이미 걸린 실호출은 기존과 동일하게 일일 카운터를 소비하지 않는다.
@@ -80,7 +92,7 @@ Deno.serve(async (req) => {
       max_tokens: 500,
       system: SYSTEM,
       output_config: { format: { type: 'json_schema', schema: DIRECTIVE_JSON_SCHEMA } },
-      messages: [{ role: 'user', content: `웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}.\n플레이 로그:\n${JSON.stringify(log)}` }],
+      messages: [{ role: 'user', content: `웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}. 직전 buff: ${prevBuff}.\n플레이 로그:\n${JSON.stringify(log)}` }],
     });
     const text = msg.content.find((b) => b.type === 'text')?.text ?? '{}';
     return new Response(JSON.stringify({ directive: JSON.parse(text) }), { headers: cors });

@@ -23,7 +23,7 @@ export async function requestDirective(
     const res = await fetch(DIRECTOR_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode: 'directive', log, wave, budget: budgetFor(wave), prevMutation, sessionId }),
+      body: JSON.stringify({ mode: 'directive', log, wave, budget: budgetFor(wave), prevMutation, prevBuff, sessionId }),
       signal: ctrl.signal,
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
@@ -50,7 +50,7 @@ export function warmUpDirector(): void {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        mode: 'directive', log: WARMUP_LOG, wave: 1, budget: budgetFor(1), prevMutation: 'NONE',
+        mode: 'directive', log: WARMUP_LOG, wave: 1, budget: budgetFor(1), prevMutation: 'NONE', prevBuff: 'NONE',
         sessionId, warmup: true,
       }),
     }).catch(() => {});

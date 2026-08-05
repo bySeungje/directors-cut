@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { Composition, Directive, EnemyType } from '../contracts/directive';
 import type { ArenaScene } from './scenes/ArenaScene';
 import { applyMutation } from './mutations';
+import { setActiveBuff } from './buffs';
 
 const SPAWN_MARGIN = 40; // 화면 밖 40px에서 진입
 const RING_RADIUS = 320; // RING: 플레이어 중심 반경 320px
@@ -14,6 +15,7 @@ const OPPOSITE_EDGE: Record<Edge, Edge> = { N: 'S', S: 'N', E: 'W', W: 'E' };
 /** 디렉티브를 실제 스폰+mutation으로 실행한다. SPAWN_STORM이면 4초 간격 3분할 스폰. */
 export function runDirective(scene: ArenaScene, d: Directive): void {
   applyMutation(scene, d.mutation);
+  setActiveBuff(d.buff);
 
   if (d.mutation === 'SPAWN_STORM') {
     // count가 작은 composition(예: count=1,2)은 splitIntoStormBatches가 뒤쪽 배치를 빈 배열로 반환할 수 있다.
