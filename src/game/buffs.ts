@@ -3,7 +3,9 @@ import { BuffCard, EnemyType } from '../contracts/directive';
 /** 활성 강화 카드. 웨이브마다 setActiveBuff로 설정하고 웨이브 종료 시 clearBuff로 초기화한다(누적 금지). */
 let active: BuffCard = 'NONE';
 
-export const INTERCEPT_LEAD_SEC = 0.4;
+/** 선행 시간 상한(초). 실제 선행은 `거리 ÷ 적 이속`이며 이 값으로 자른다 — 더 늘리면 과예측으로
+ *  빗나가 오히려 거리가 벌어진다(스펙 §3.4.2 실측: 상한 2.5초일 때 159→166). */
+export const INTERCEPT_MAX_LEAD_SEC = 1.5;
 const ENCIRCLE_START_RADIUS = 200;
 const ENCIRCLE_MIN_RADIUS = 60;
 const ENCIRCLE_CLOSE_PER_SEC = 25;

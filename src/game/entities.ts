@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
-import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, INTERCEPT_LEAD_SEC } from './buffs';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, INTERCEPT_MAX_LEAD_SEC } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -364,19 +364,28 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   /** 플레이어가 "가려는 곳"을 노린다. 방향을 급히 꺾으면 빗나간다 — 페인트가 통해야 한다(스펙 §3.4.2). */
+  /** 이 적이 플레이어에게 도달하는 데 걸리는 시간만큼 앞을 내다본 지점. 고정 선행으로는 효과가 없다 —
+   *  플레이어 이속 220 대 추격자 90으로 2.4배 차이라, 짧게 보면 예측이 무의미하다(스펙 §3.4.2 실측표). */
+  private predictedPoint(player: Player): { x: number; y: number } {
+    const dist = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+    const lead = Math.min(dist / this.moveSpeed, INTERCEPT_MAX_LEAD_SEC);
+    return {
+      x: Phaser.Math.Clamp(player.x + player.body.velocity.x * lead, 0, this.scene.scale.width),
+      y: Phaser.Math.Clamp(player.y + player.body.velocity.y * lead, 0, this.scene.scale.height),
+    };
+  }
+
   private updateIntercept(player: Player) {
-    const w = this.scene.scale.width;
-    const h = this.scene.scale.height;
-    const tx = Phaser.Math.Clamp(player.x + player.body.velocity.x * INTERCEPT_LEAD_SEC, 0, w);
-    const ty = Phaser.Math.Clamp(player.y + player.body.velocity.y * INTERCEPT_LEAD_SEC, 0, h);
-    this.scene.physics.moveTo(this, tx, ty, this.moveSpeed);
+    const p = this.predictedPoint(player);
+    this.scene.physics.moveTo(this, p.x, p.y, this.moveSpeed);
   }
 
   /** 직진하지 않고 자기 각도 슬롯의 포위 지점으로 이동한다. 반경이 줄어들며 조여든다. */
   private updateEncircle(time: number, player: Player) {
     const r = encircleRadius(time);
-    const tx = player.x + Math.cos(this.slotAngle) * r;
-    const ty = player.y + Math.sin(this.slotAngle) * r;
+    const p = this.predictedPoint(player); // 링 중심도 예측점 — 현재 위치 기준이면 뒤에 한 덩어리로 늘어선다
+    const tx = p.x + Math.cos(this.slotAngle) * r;
+    const ty = p.y + Math.sin(this.slotAngle) * r;
     if (Phaser.Math.Distance.Between(this.x, this.y, tx, ty) < 8) this.body.setVelocity(0, 0);
     else this.scene.physics.moveTo(this, tx, ty, this.moveSpeed);
   }
