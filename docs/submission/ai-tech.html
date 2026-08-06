@@ -132,7 +132,7 @@
   <div class="badge">D</div>
   <h1>DIRECTOR'S CUT — AI 활용 기술 문서</h1>
 </header>
-<p class="doc-sub">NAN 2026 사전과제 제출물 · 2026-08-05 기준 실측</p>
+<p class="doc-sub">NAN 2026 사전과제 제출물 · 2026-08-06 기준 실측</p>
 
 <div class="intro">
   이 게임은 두 층위에서 AI를 쓴다. 게임 안에는 플레이어의 로그를 읽고 다음 웨이브를 설계하는
@@ -204,8 +204,8 @@
   "wave": 2, "clearTimeSec": 34.2, "hpLost": 2,
   "damageSources": {"chaser": 1, "shooter": 1},
   "movement": {"quadrantTime": {"NW": 0.4, "NE": 0.1, "SW": 0.4, "SE": 0.1},
-               "wallHugRatio": 0.55, "dashCount": 6},
-  "combat": {"kills": {"chaser": 12, "shooter": 3, "splitter": 2}, "accuracy": 0.61},
+               "wallHugRatio": 0.55, "dashCount": 6, "hotspotConcentration": 0.22},
+  "combat": {"kills": {"chaser": 12, "shooter": 3, "splitter": 2}, "accuracy": 0.61, "clusterRatio": 0.58},
   "upgrades": ["DAMAGE_UP", "MOVE_SPEED_UP"],
   "prevMutations": ["FOG"]
 }</pre>
@@ -214,8 +214,8 @@
   "composition": [
     {"type": "chaser|shooter|splitter", "count": 1, "spawn": "N|S|E|W|RING|PINCER|BEHIND", "elite": false}
   ],
-  "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
-  "buff": "NONE|TOUGH|SWIFT|RELENTLESS|RAPID_FIRE|MARKSMAN|VOLATILE",
+  "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|LAVA_HOTSPOT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
+  "buff": "NONE|TOUGH|SWIFT|RELENTLESS|RAPID_FIRE|MARKSMAN|VOLATILE|INTERCEPT|ENCIRCLE",
   "taunt": "60자 이내 — 로그의 실제 습관 1개 지목",
   "intent": "100자 이내 — 설계 의도"
 }</pre>
@@ -246,7 +246,11 @@
     RAPID_FIRE(shooter 발사 간격 40% 단축) — 피격이 적고 탄을 잘 피할 때
     MARKSMAN(shooter 탄속 +50%, 유지거리 +80) — 벽에 붙지 않고 원거리 안전지대를 쓸 때
     VOLATILE(splitter 분열 2->3기) — 분열형 처치가 많고 물량 처리가 능숙할 때
+    INTERCEPT(추격형이 이동 방향 앞을 예측 요격) — 적을 뭉쳐서 한 번에 쓸어담을 때
+    ENCIRCLE(추격형이 포위 반경으로 흩어져 조여듦) — 한 덩어리로 몰아두고 처리할 때
     NONE — 강화 없이 구성만으로 압박할 때
+- 해석 규칙: clusterRatio가 낮으면(0.3 미만) 적이 한 덩어리로 뭉쳐 있었다는 뜻이다 — 플레이어가 몰아서 쓸어담고 있다. INTERCEPT나 ENCIRCLE로 그 수렴을 깨라.
+- 해석 규칙: hotspotConcentration이 높으면(0.4 초과) 한 자리에 오래 버텼다는 뜻이다 — LAVA_HOTSPOT은 그 자리를 정확히 태운다.
 - 강화 카드는 비용이 든다: NONE이 아니면 예산의 25%가 차감되므로 적 수를 그만큼 줄여야 한다.
 - 직전 웨이브와 같은 카드는 고르지 마라.
 - intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.</pre>
@@ -279,7 +283,7 @@
     <tr><td>예산</td><td><code class="inline">budgetFor(wave) = 8 + wave×4 + max(0, wave−5)×12</code> 이하만 허용(비용: chaser 1·shooter 2·splitter 2, elite ×3). 난이도 곡선을 LLM이 깨뜨릴 수 없다</td></tr>
     <tr><td>반복</td><td>직전 mutation과 동일하면 검증 계층이 NONE으로 강제 교체</td></tr>
     <tr><td>시간</td><td>4초 초과·네트워크 오류·검증 실패 → 사전 제작 폴백 뱅크(웨이브별 3종×6 + 오프닝 1)에서 무작위 선택. 대사도 뱅크에 포함돼 있어 플레이어는 폴백 여부를 알 수 없다</td></tr>
-    <tr><td>강화 카드</td><td>어휘 7종 enum(NONE·TOUGH·SWIFT·RELENTLESS·RAPID_FIRE·MARKSMAN·VOLATILE) 중 1개만 허용. 비용은 해당 웨이브 예산의 25%(반올림, NONE은 0)가 자동 차감돼 물량이 그만큼 준다. 직전 웨이브와 동일 카드 금지 — 위반 시 NONE으로 강제 교체. 웨이브 종료 시 초기화돼 절대 누적되지 않는다</td></tr>
+    <tr><td>강화 카드</td><td>어휘 9종 enum(NONE·TOUGH·SWIFT·RELENTLESS·RAPID_FIRE·MARKSMAN·VOLATILE·INTERCEPT·ENCIRCLE) 중 1개만 허용 — 성능 조정 7종 + 행동 지정 2종. 비용은 해당 웨이브 예산의 25%(반올림, NONE은 0)가 자동 차감돼 물량이 그만큼 준다. 직전 웨이브와 동일 카드 금지 — 위반 시 NONE으로 강제 교체. 웨이브 종료 시 초기화돼 절대 누적되지 않는다</td></tr>
   </table>
   <p>
     이 경계는 실측으로 확인했다. 장애 경로(네트워크 오류·타임아웃·스키마 위반)는 유닛 테스트 4건에
@@ -291,6 +295,10 @@
     확인했다(21회째부터 거부, 501회째부터 거부). 강화 카드도 같은 방식으로 라이브 검증했다 — 카드별
     스탯 반영(예: TOUGH HP +1, SWIFT 이속 ×1.25, RELENTLESS chaser 이속 ×1.45·HP −1)과 적용 순서
     (기본값 → elite 배수 → 강화 카드), 웨이브 클리어 시 초기화돼 다음 웨이브로 누적되지 않음을 확인했다.
+    행동 카드(INTERCEPT·ENCIRCLE)도 같은 방식으로 라이브 검증했다 — 카드 없음일 때 추격형은 아레나를
+    8등분한 방위(8분면) 중 1면에만 뭉쳐 플레이어 뒤만 따라왔다(전방성 −0.91 — −1에 가까울수록 완전히
+    후방, 평균 거리 209px). INTERCEPT를 걸면 평균 거리 169px·전방성 −0.63으로 진행 방향 앞쪽을 짚었고,
+    ENCIRCLE을 걸면 한 방향으로 뭉치지 않고 3.75면으로 갈라져 포위했다(전방성 −0.61, 평균 거리 185px).
   </p>
   <div class="callout">
     <div class="callout-label">설계 사례 — 계약을 바꾸지 않고 프롬프트로 푼 문제</div>
@@ -299,6 +307,14 @@
     다시 맞춰야 한다. 대신 시스템 프롬프트에 해석 규칙 한 줄을 추가했다:
     <code class="inline">hpLost − Σ damageSources = 지형 피해</code>. 계약은 그대로 두고, 디렉터가
     로그에서 지형 피해를 스스로 읽어내게 했다.
+  </div>
+  <div class="callout">
+    <div class="callout-label">설계 사례 — LAVA_HOTSPOT: 어휘만 고르고 좌표는 엔진이 계산</div>
+    이 프로젝트의 권한 경계 원칙이 가장 선명하게 드러나는 지점이다. 디렉터는 좌표를 부르지 않는다 —
+    mutation 필드에서 <code class="inline">LAVA_HOTSPOT</code>이라는 어휘 하나만 고르면, 실제 좌표는
+    엔진이 그 웨이브의 텔레메트리 히트맵(플레이어가 가장 오래 머문 셀)에서 결정론적으로 계산한다.
+    웨이브 로그에도 좌표를 넘기지 않으므로 LLM은 애초에 수치를 볼 수도, 정할 수도 없는 구조다.
+    "저기를 태워라"처럼 수치를 부르는 대신 "쟤 자리를 태워라"라는 의도만 말하고, 집행은 엔진이 한다.
   </div>
 </section>
 

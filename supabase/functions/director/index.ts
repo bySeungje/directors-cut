@@ -19,8 +19,8 @@ const DIRECTIVE_JSON_SCHEMA = {
         additionalProperties: false,
       },
     },
-    mutation: { type: 'string', enum: ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] },
-    buff: { type: 'string', enum: ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE'] },
+    mutation: { type: 'string', enum: ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'LAVA_HOTSPOT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] },
+    buff: { type: 'string', enum: ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE'] },
     taunt: { type: 'string' },
     intent: { type: 'string' },
   },
@@ -55,7 +55,11 @@ const SYSTEM = `너는 아케이드 게임의 'AI 디렉터'다. 플레이어의
     RAPID_FIRE(shooter 발사 간격 40% 단축) — 피격이 적고 탄을 잘 피할 때
     MARKSMAN(shooter 탄속 +50%, 유지거리 +80) — 벽에 붙지 않고 원거리 안전지대를 쓸 때
     VOLATILE(splitter 분열 2->3기) — 분열형 처치가 많고 물량 처리가 능숙할 때
+    INTERCEPT(추격형이 이동 방향 앞을 예측 요격) — 적을 뭉쳐서 한 번에 쓸어담을 때
+    ENCIRCLE(추격형이 포위 반경으로 흩어져 조여듦) — 한 덩어리로 몰아두고 처리할 때
     NONE — 강화 없이 구성만으로 압박할 때
+- 해석 규칙: clusterRatio가 낮으면(0.3 미만) 적이 한 덩어리로 뭉쳐 있었다는 뜻이다 — 플레이어가 몰아서 쓸어담고 있다. INTERCEPT나 ENCIRCLE로 그 수렴을 깨라.
+- 해석 규칙: hotspotConcentration이 높으면(0.4 초과) 한 자리에 오래 버텼다는 뜻이다 — LAVA_HOTSPOT은 그 자리를 정확히 태운다.
 - 강화 카드는 비용이 든다: NONE이 아니면 예산의 25%가 차감되므로 적 수를 그만큼 줄여야 한다.
 - 직전 웨이브와 같은 카드는 고르지 마라.
 - intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.`;
