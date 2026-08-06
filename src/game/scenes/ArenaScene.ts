@@ -493,7 +493,9 @@ export class ArenaScene extends Phaser.Scene {
     if (import.meta.env.DEV) {
       const win = window as unknown as { __setBuff?: (card: BuffCard) => void };
       win.__setBuff = (card: BuffCard) => {
-        setActiveBuff(card);
+        // 활성 시각을 함께 넘겨야 ENCIRCLE 포위 반경이 200px에서 시작한다. 생략하면 activatedAt이 0이라
+        // encircleRadius가 즉시 하한(60px)을 반환해 포위가 보이지 않는다(waveRunner와 동일한 계약).
+        setActiveBuff(card, this.time.now);
         console.log('[dev] buff =', card);
       };
       console.log("[ArenaScene] 강화 카드 검증: devtools 콘솔에서 window.__setBuff('TOUGH') 실행");

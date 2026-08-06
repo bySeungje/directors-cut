@@ -370,7 +370,10 @@ function setupHotspot(scene: ArenaScene) {
 }
 ```
 
-- [ ] **Step 5: 활성 시각 전달** — `src/game/waveRunner.ts`의 `setActiveBuff(d.buff)` 호출을 `setActiveBuff(d.buff, scene.time.now)`로 바꾼다. 이게 없으면 `ENCIRCLE` 반경이 항상 최소값에서 시작한다.
+- [ ] **Step 5: 활성 시각 전달** — `setActiveBuff`를 부르는 **모든 곳**에 현재 시각을 넘긴다. 이게 없으면 `activatedAt`이 0이라 `encircleRadius`가 즉시 하한(60px)을 반환하고 포위가 전혀 안 보인다.
+
+1. `src/game/waveRunner.ts`: `setActiveBuff(d.buff)` → `setActiveBuff(d.buff, scene.time.now)`
+2. `src/game/scenes/ArenaScene.ts`의 dev 훅 `exposeBuffDevHook()`: `setActiveBuff(card)` → `setActiveBuff(card, this.time.now)` *(플랜 개정 2026-08-06 — 최초 플랜이 waveRunner만 지목해 dev 훅을 놓쳤다. 훅으로 `ENCIRCLE`을 켜면 포위가 안 보여 밸런싱 세션에서 카드를 체감할 수 없다.)*
 
 - [ ] **Step 6: 검증 + 커밋**
 
