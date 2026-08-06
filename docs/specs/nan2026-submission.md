@@ -23,7 +23,7 @@
 - **amendment 2026-08-05 (승제 승인)**: §3.4에 워밍업 호출 추가, MIT 라이선스 채택.
 - **amendment 2026-08-05 #2 (승제 승인)**: §3.4.1 강화 카드 7종 — 디렉터가 적 성능을 표적 조정. 배포 후 밸런싱 실플레이는 이 기능 반영 뒤에 수행한다.
 - **amendment 2026-08-06 #3 (승제 승인)**: §3.4.2 행동 카드 2종(`INTERCEPT`·`ENCIRCLE`) + `LAVA_HOTSPOT` 변주 + 판단 지표 2종. 승제 실플레이에서 "한 구석에 몰아두고 쓸어담기"라는 지배 전략이 발견돼, 디렉터가 무엇을 설계하든 무력화되는 문제를 차단한다.
-- [ ] 행동 카드·핫스팟 용암 구현 (텔레메트리·계약·엔티티·변주·프록시·문서)
+- [x] 행동 카드·핫스팟 용암 구현 (텔레메트리·계약·엔티티·변주·프록시·문서) — 2026-08-06 완료. 라이브 실측 `docs/verification/2026-08-06-behavior-cards-live.md`
 - [x] 강화 카드 구현 (계약·검증기·엔티티·실행기·프록시·문서) — 2026-08-05 완료. 전체 리뷰 SHIP 판정(Critical/Important 0). 라이브 실측 `docs/verification/2026-08-05-buff-cards-live.md`
 
 ---
@@ -96,6 +96,7 @@
     {"type": "chaser|shooter|splitter", "count": 1, "spawn": "N|S|E|W|RING|PINCER|BEHIND", "elite": false}
   ],
   "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|LAVA_HOTSPOT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
+  "buff": "NONE|TOUGH|SWIFT|RELENTLESS|RAPID_FIRE|MARKSMAN|VOLATILE|INTERCEPT|ENCIRCLE",
   "taunt": "≤60자 — 로그의 실제 습관을 반드시 1개 지목",
   "intent": "≤100자 설계 의도(리포트·디렉터 로그 패널용)"
 }
@@ -124,7 +125,7 @@
 | `RAPID_FIRE` | shooter 발사 간격 ×0.6 (1600→960ms) | 탄을 잘 피함 (`hpLost` 낮음) |
 | `MARKSMAN` | shooter 탄속 +50%, 유지거리 +80 (260→340) | 원거리 안전지대 사용 (`wallHugRatio` 낮음) |
 | `VOLATILE` | splitter 분열 소형 2→3기 | 물량 처리 능숙 (`combat.kills.splitter`) |
-| `INTERCEPT` | 추격형이 현재 위치가 아니라 **0.4초 뒤 예상 위치**로 이동 | 키팅으로 적을 뭉쳐 쓸어담음 (`combat.clusterRatio` 낮음) |
+| `INTERCEPT` | 추격형이 현재 위치가 아니라 **예측 지점**으로 이동(선행 = 도달시간, 상한 1.5초 — §3.4.2) | 키팅으로 적을 뭉쳐 쓸어담음 (`combat.clusterRatio` 낮음) |
 | `ENCIRCLE` | 추격형이 직진 대신 **포위 반경으로 흩어져** 조여듦 | 한 덩어리 수렴을 이용 (`combat.clusterRatio` 낮음) |
 
 **적용 순서**: `ENEMY_DEF` 기본값 → elite 배수 → 강화 카드. 단 splitter 분열 소형은 `hpOverride: 1`로 스폰되어 HP 버프를 받지 않는다(이속 버프는 받는다). 카드 비용을 소형까지 강화되는 것을 전제로 매기지 않았고, 걸리면 splitter 중심 웨이브의 난이도가 급등하기 때문이다 — 2026-08-05 전체 리뷰에서 확인·의도로 확정. 예) elite chaser HP = 2×3=6, `TOUGH` 적용 시 7. 이속은 elite 1.15 × `SWIFT` 1.25 = 1.4375배.
