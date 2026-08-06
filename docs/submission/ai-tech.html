@@ -349,6 +349,7 @@
     <tr><td>원격 QA 제약(백그라운드 탭 rAF 정지)</td><td><code class="inline">498c28e</code></td><td>(Task 8 구현)</td><td>검증 수단 부재를 계획에 반영해 dev QA 훅 추가</td></tr>
     <tr><td>지형 피해가 적 타입별 집계에 안 잡힘</td><td><code class="inline">2bdc965</code></td><td>(Task 7 프록시)</td><td>계약을 바꾸는 대신 프롬프트에 해석 규칙 추가</td></tr>
     <tr><td>Phaser 버전 표기 오류(3→4)</td><td><code class="inline">e15f9dc</code></td><td>—</td><td>스펙·플랜의 사실 오류를 실측 후 정정</td></tr>
+    <tr><td>행동 카드의 고정 선행(0.4초)이 무효</td><td><code class="inline">8c2e894</code></td><td><code class="inline">cbeefc2</code></td><td>라이브 실측 전까지 설계가 맞는 줄 알았다 — 플레이어와 적의 속도차(2.4배)를 계산에 넣지 않은 값이었다</td></tr>
   </table>
   <div class="callout">
     <div class="callout-label">첫 사례 — 이 방식이 실제로 작동한다는 증거</div>
@@ -384,7 +385,7 @@
 <section>
   <h2>2.4 규모</h2>
   <p>
-    이 문서를 쓰는 시점(2026-08-05) 기준 실측치다. 제출 직전 최종 재산출 대상. 커밋 50여 개, TypeScript
+    이 문서를 쓰는 시점(2026-08-06) 기준 실측치다. 제출 직전 최종 재산출 대상. 커밋 50여 개, TypeScript
     27파일 3,068줄(src·tests 기준), 유닛 테스트 59개(7개 파일 전체 통과). 커밋 유형 분포: feat 14 ·
     fix 9 · docs 9 · plan 8 · spec 5 · chore 3 · test 2. <code class="inline">plan</code> 커밋이 별도
     카테고리로 8건 존재한다는 사실 자체가 이 파이프라인의 증거다 — 코드를 고치기 전에 계획 문서를 고친
