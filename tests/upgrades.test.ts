@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { UPGRADES, UPGRADE_IDS, pick3 } from '../src/game/upgrades';
+import { DENY_TARGETS } from '../src/contracts/directive';
 import type { PlayerStats } from '../src/game/entities';
 
 // entities.ts는 최상단에서 `import Phaser from 'phaser'`를 실행하는데, Phaser는 모듈 로드 시점에
@@ -43,5 +44,28 @@ describe('upgrades', () => {
   it('HP_PLUS는 상한(8) 이상으로 maxHp를 올리지 않는다', () => {
     const capped = { ...FIXTURE_STATS, maxHp: 8 };
     expect(UPGRADES.HP_PLUS.apply(capped).maxHp).toBe(8);
+  });
+});
+
+describe('업그레이드 봉인', () => {
+  it('봉인된 업그레이드는 후보에 나오지 않는다', () => {
+    for (let i = 0; i < 200; i++) {
+      expect(pick3('DAMAGE_UP')).not.toContain('DAMAGE_UP');
+    }
+  });
+  it('봉인해도 후보는 여전히 3개다', () => {
+    for (let i = 0; i < 50; i++) {
+      expect(pick3('PIERCE')).toHaveLength(3);
+    }
+  });
+  it("NONE이면 아무것도 빠지지 않는다 — 전 업그레이드가 언젠가 등장한다", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 500; i++) pick3('NONE').forEach((id) => seen.add(id));
+    expect(seen.size).toBe(UPGRADE_IDS.length);
+  });
+  it('계약의 DENY_TARGETS가 UPGRADE_IDS와 동기화돼 있다', () => {
+    // 계약은 별도 파일이라 타입체커가 이 일치를 보장하지 못한다 — 이 테스트가 드리프트 방어선이다.
+    expect(DENY_TARGETS[0]).toBe('NONE');
+    expect([...DENY_TARGETS].slice(1)).toEqual([...UPGRADE_IDS]);
   });
 });

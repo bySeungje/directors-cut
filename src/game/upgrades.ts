@@ -1,4 +1,5 @@
 import type { PlayerStats } from './entities';
+import type { DenyTarget } from '../contracts/directive';
 
 export const UPGRADE_IDS = [
   'DAMAGE_UP', 'FIRE_RATE_UP', 'MOVE_SPEED_UP', 'HP_PLUS',
@@ -61,9 +62,10 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
 };
 
-/** 무작위 3종(중복 없음) — pool에서 하나씩 splice로 뽑아내 이미 뽑힌 항목이 재추첨되지 않게 한다. */
-export function pick3(): UpgradeId[] {
-  const pool = [...UPGRADE_IDS];
+/** 무작위 3종(중복 없음) — pool에서 하나씩 splice로 뽑아내 이미 뽑힌 항목이 재추첨되지 않게 한다.
+ *  deny가 NONE이 아니면 해당 업그레이드를 후보 풀에서 제외한다(디렉터의 봉인 — src/contracts/directive.ts). */
+export function pick3(deny: DenyTarget = 'NONE'): UpgradeId[] {
+  const pool = (UPGRADE_IDS as readonly UpgradeId[]).filter((id) => id !== deny);
   const picked: UpgradeId[] = [];
   for (let i = 0; i < 3 && pool.length > 0; i++) {
     const idx = Math.floor(Math.random() * pool.length);

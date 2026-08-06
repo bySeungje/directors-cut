@@ -1,5 +1,5 @@
 import {
-  Directive, DirectiveSchema, Mutation, Composition, BuffCard,
+  Directive, DirectiveSchema, Mutation, Composition, BuffCard, DenyTarget,
   ENEMY_COST, ELITE_MULT, BUFF_COST_RATIO,
 } from '../contracts/directive';
 
@@ -21,6 +21,7 @@ export function validateDirective(
   wave: number,
   prevMutation: Mutation,
   prevBuff: BuffCard,
+  prevDeny: DenyTarget,
 ): Directive | null {
   const parsed = DirectiveSchema.safeParse(raw);
   if (!parsed.success) return null;
@@ -30,5 +31,6 @@ export function validateDirective(
 
   const mutation: Mutation = d.mutation !== 'NONE' && d.mutation === prevMutation ? 'NONE' : d.mutation;
   const buff: BuffCard = d.buff !== 'NONE' && d.buff === prevBuff ? 'NONE' : d.buff;
-  return { ...d, mutation, buff };
+  const deny: DenyTarget = d.deny !== 'NONE' && d.deny === prevDeny ? 'NONE' : d.deny;
+  return { ...d, mutation, buff, deny };
 }

@@ -162,7 +162,7 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
         .setDepth(DEPTH_UI),
     );
 
-    pick3().forEach((id, i) => buildCard(id, i));
+    pick3(directive.deny).forEach((id, i) => buildCard(id, i));
   }
 
   function buildCard(id: UpgradeId, index: number) {

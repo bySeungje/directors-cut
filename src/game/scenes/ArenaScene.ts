@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Directive, EnemyType, Mutation, BuffCard, WaveLog } from '../../contracts/directive';
+import { Directive, EnemyType, Mutation, BuffCard, DenyTarget, WaveLog } from '../../contracts/directive';
 import { OPENING_WAVE } from '../../director/fallbackBank';
 import { WaveTelemetry } from '../../telemetry/collector';
 import {
@@ -53,6 +53,9 @@ export class ArenaScene extends Phaser.Scene {
   /** 가장 최근에 완료된 웨이브의 buff(다음 requestDirective 호출에 씀) — 다음 디렉티브가 resolve되는 즉시(.then())
    *  그 directive.buff로 갱신된다. 웨이브 종료 시 clearMutation→clearBuff로 활성 버프 자체는 별도로 리셋된다(waveRunner.ts). */
   prevBuff: BuffCard = 'NONE';
+  /** 가장 최근에 완료된 웨이브의 deny(다음 requestDirective 호출에 씀) — 다음 디렉티브가 resolve되는 즉시(.then())
+   *  그 directive.deny로 갱신된다. prevBuff와 정확히 같은 패턴 — 예산에는 영향을 주지 않는다(validator.ts). */
+  prevDeny: DenyTarget = 'NONE';
   /** 가장 최근에 완료된 웨이브의 핫스팟(플레이어가 가장 오래 머문 지점) — LAVA_HOTSPOT이 실제 좌표로 소비한다.
    *  텔레메트리가 다음 웨이브용으로 교체되기 직전, snapshotCurrentWaveLog에서 뽑아둔다(교체 후면 빈 그리드라 중앙이 나온다). */
   lastHotspot: { x: number; y: number } | null = null;
@@ -112,6 +115,7 @@ export class ArenaScene extends Phaser.Scene {
     this.mutationHistory = [];
     this.prevMutation = 'NONE';
     this.prevBuff = 'NONE';
+    this.prevDeny = 'NONE';
     this.lastHotspot = null;
     this.currentWave = 1;
     this.lastDirectiveFromLLM = false;
@@ -363,13 +367,15 @@ export class ArenaScene extends Phaser.Scene {
     // currentWave는 카드 선택 완료(onDone) 시점까지 갱신하지 않는다 — 그래야 인터벌 내내 좌상단 HUD와
     // 인터벌 패널의 "웨이브 N 클리어" 헤더가 같은(방금 끝난) 웨이브 번호를 가리켜 서로 어긋나지 않는다.
     const nextWave = wave + 1;
-    requestDirective(log, nextWave, this.prevMutation, this.prevBuff).then(({ directive, fromLLM }) => {
+    requestDirective(log, nextWave, this.prevMutation, this.prevBuff, this.prevDeny).then(({ directive, fromLLM }) => {
       if (this.playerDead) return; // 인터벌 대기 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
       this.lastDirectiveFromLLM = fromLLM;
       this.lastDirective = directive;
       // directive.buff는 검증을 거친 최종값이라 다음 웨이브가 실제로 실행할 buff와 동일하다 — 그 웨이브가
       // 끝나 다음 requestDirective를 부를 때 "직전 buff"로 정확히 이 값을 참조하도록 미리 갱신해둔다.
       this.prevBuff = directive.buff;
+      // deny도 동일 패턴 — 다음 인터벌의 pick3()가 참조할 "직전 봉인"을 여기서 미리 갱신해둔다.
+      this.prevDeny = directive.deny;
       runInterval(this, directive, (picked) => {
         if (this.playerDead) return; // 대사·카드 선택 중에도 잔여 피해로 사망할 수 있어 onDone에도 동일 가드
         this.chosenUpgrades.push(picked);

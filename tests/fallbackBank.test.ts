@@ -5,11 +5,11 @@ import { BUFF_CARDS } from '../src/contracts/directive';
 
 describe('fallbackBank', () => {
   it('오프닝 포함 모든 뱅크 항목이 해당 웨이브 검증을 통과한다', () => {
-    expect(validateDirective(OPENING_WAVE, 1, 'NONE', 'NONE')).not.toBeNull();
+    expect(validateDirective(OPENING_WAVE, 1, 'NONE', 'NONE', 'NONE')).not.toBeNull();
     for (let w = 2; w <= 7; w++) {
       for (let i = 0; i < 10; i++) {
         const d = pickFallback(w, 'NONE');
-        expect(validateDirective(d, w, 'NONE', 'NONE')).not.toBeNull();
+        expect(validateDirective(d, w, 'NONE', 'NONE', 'NONE')).not.toBeNull();
       }
     }
   });

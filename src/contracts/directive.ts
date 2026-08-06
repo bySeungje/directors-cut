@@ -3,12 +3,19 @@ import { z } from 'zod';
 export const ENEMY_TYPES = ['chaser', 'shooter', 'splitter'] as const;
 export const SPAWN_PATTERNS = ['N', 'S', 'E', 'W', 'RING', 'PINCER', 'BEHIND'] as const;
 export const MUTATIONS = ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'LAVA_HOTSPOT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] as const;
-export const BUFF_CARDS = ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE'] as const;
+export const BUFF_CARDS = ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE', 'EVASIVE'] as const;
+/** 업그레이드 봉인 대상. `src/game/upgrades.ts`의 UPGRADE_IDS와 항목·순서가 일치해야 한다
+ *  — 별도 파일이라 타입체커가 보장하지 못하므로 tests/upgrades.test.ts가 드리프트를 막는다. */
+export const DENY_TARGETS = [
+  'NONE', 'DAMAGE_UP', 'FIRE_RATE_UP', 'MOVE_SPEED_UP', 'HP_PLUS',
+  'PIERCE', 'MULTI_SHOT', 'BULLET_SPEED_UP', 'DASH_CD_DOWN',
+] as const;
 
 export type EnemyType = (typeof ENEMY_TYPES)[number];
 export type SpawnPattern = (typeof SPAWN_PATTERNS)[number];
 export type Mutation = (typeof MUTATIONS)[number];
 export type BuffCard = (typeof BUFF_CARDS)[number];
+export type DenyTarget = (typeof DENY_TARGETS)[number];
 
 export const CompositionSchema = z.object({
   type: z.enum(ENEMY_TYPES),
@@ -21,6 +28,7 @@ export const DirectiveSchema = z.object({
   composition: z.array(CompositionSchema).min(1).max(4),
   mutation: z.enum(MUTATIONS),
   buff: z.enum(BUFF_CARDS),
+  deny: z.enum(DENY_TARGETS),
   taunt: z.string().min(1).max(60),
   intent: z.string().min(1).max(100),
 });
@@ -66,9 +74,10 @@ export const DIRECTIVE_JSON_SCHEMA = {
     },
     mutation: { type: 'string', enum: [...MUTATIONS] },
     buff: { type: 'string', enum: [...BUFF_CARDS] },
+    deny: { type: 'string', enum: [...DENY_TARGETS] },
     taunt: { type: 'string' },
     intent: { type: 'string' },
   },
-  required: ['composition', 'mutation', 'buff', 'taunt', 'intent'],
+  required: ['composition', 'mutation', 'buff', 'deny', 'taunt', 'intent'],
   additionalProperties: false,
 } as const;

@@ -1,4 +1,4 @@
-import { Directive, Mutation, BuffCard, WaveLog } from '../contracts/directive';
+import { Directive, Mutation, BuffCard, DenyTarget, WaveLog } from '../contracts/directive';
 import { validateDirective, budgetFor } from './validator';
 import { pickFallback } from './fallbackBank';
 
@@ -14,7 +14,7 @@ const WARMUP_LOG: WaveLog = {
 };
 
 export async function requestDirective(
-  log: WaveLog, wave: number, prevMutation: Mutation, prevBuff: BuffCard,
+  log: WaveLog, wave: number, prevMutation: Mutation, prevBuff: BuffCard, prevDeny: DenyTarget,
 ): Promise<{ directive: Directive; fromLLM: boolean }> {
   if (!DIRECTOR_URL) return { directive: pickFallback(wave, prevMutation), fromLLM: false };
   const ctrl = new AbortController();
@@ -23,12 +23,12 @@ export async function requestDirective(
     const res = await fetch(DIRECTOR_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode: 'directive', log, wave, budget: budgetFor(wave), prevMutation, prevBuff, sessionId }),
+      body: JSON.stringify({ mode: 'directive', log, wave, budget: budgetFor(wave), prevMutation, prevBuff, prevDeny, sessionId }),
       signal: ctrl.signal,
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const body = await res.json();
-    const valid = validateDirective(body.directive, wave, prevMutation, prevBuff);
+    const valid = validateDirective(body.directive, wave, prevMutation, prevBuff, prevDeny);
     if (!valid) throw new Error('invalid directive');
     return { directive: valid, fromLLM: true };
   } catch {
@@ -51,7 +51,7 @@ export function warmUpDirector(): void {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         mode: 'directive', log: WARMUP_LOG, wave: 1, budget: budgetFor(1), prevMutation: 'NONE', prevBuff: 'NONE',
-        sessionId, warmup: true,
+        prevDeny: 'NONE', sessionId, warmup: true,
       }),
     }).catch(() => {});
   } catch {
