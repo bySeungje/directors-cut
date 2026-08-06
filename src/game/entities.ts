@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
-import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC } from './buffs';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -350,7 +350,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       case 'chaser':
       case 'splitter':
         // splitter 생존 중 이동 패턴은 브리프에 명시 없음 → chaser와 동일한 분기(재량 결정, 분열은 사망 시에만 고유)
-        if (isEncircle()) this.updateEncircle(time, player);
+        if (isEvasive()) this.updateEvasive(time, player);
+        else if (isEncircle()) this.updateEncircle(time, player);
         else if (isIntercept()) this.updateIntercept(player);
         else this.scene.physics.moveToObject(this, player, this.moveSpeed);
         this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
@@ -400,6 +401,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     else this.scene.physics.moveTo(this, tx, ty, this.moveSpeed);
   }
 
+  /** 플레이어를 향해 접근하되 좌우로 흔들어 자동 조준탄을 흘린다. 각도 슬롯으로 적마다 위상이 달라
+   *  서로 다른 궤도를 그린다 — 전원이 같은 위상이면 한 덩어리로 같은 곡선을 그려 의미가 없다. */
+  private updateEvasive(time: number, player: Player) {
+    const base = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
+    const wobble = Math.sin(time / EVASIVE_PERIOD_MS + this.slotAngle) * EVASIVE_AMPLITUDE_RAD;
+    this.scene.physics.velocityFromRotation(base + wobble, this.moveSpeed, this.body.velocity);
+  }
+
   private updateShooter(
     time: number,
     player: Player,
@@ -413,6 +422,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.scene.physics.velocityFromRotation(angleToPlayer + Math.PI, this.moveSpeed, this.body.velocity);
     } else if (dist > keep + SHOOTER_DEADZONE) {
       this.scene.physics.velocityFromRotation(angleToPlayer, this.moveSpeed, this.body.velocity);
+    } else if (isEvasive()) {
+      // 데드존 안에서도 좌우로 스트레이핑한다 — 정지 상태면 회피 카드의 의미가 없다
+      const dir = Math.sin(time / EVASIVE_PERIOD_MS + this.slotAngle) >= 0 ? 1 : -1;
+      this.scene.physics.velocityFromRotation(angleToPlayer + (Math.PI / 2) * dir, this.moveSpeed * 0.7, this.body.velocity);
     } else {
       this.body.setVelocity(0, 0);
     }

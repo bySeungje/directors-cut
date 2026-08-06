@@ -31,6 +31,12 @@ export function getActiveBuff(): BuffCard {
 export function isIntercept(): boolean { return active === 'INTERCEPT'; }
 export function isEncircle(): boolean { return active === 'ENCIRCLE'; }
 
+/** 회피 기동 — 흔들림 주기(ms)와 진폭(rad). 접근 자체는 계속하므로 무한 회피가 아니다(스펙 §3.4.3). */
+export const EVASIVE_PERIOD_MS = 200;
+export const EVASIVE_AMPLITUDE_RAD = 0.9;
+
+export function isEvasive(): boolean { return active === 'EVASIVE'; }
+
 /** 포위 반경 — 카드 활성 시점부터 초당 25px씩 조여든다. */
 /** 조임이 끝났는가 — 이때부터 포위를 풀고 덮친다. 링 위에 멈춰 있으면 접촉 판정 밖에 대치선만
  *  생겨 포위 카드가 오히려 플레이어를 안전하게 만든다(스펙 §3.4.2 실측). */

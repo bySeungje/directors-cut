@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setActiveBuff, clearBuff, getActiveBuff,
   buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, buffedSplitCount,
-  isIntercept, isEncircle, encircleRadius, encircleClosed,
+  isIntercept, isEncircle, encircleRadius, encircleClosed, isEvasive,
 } from '../src/game/buffs';
 
 // mutations.ts는 최상단에서 `import Phaser from 'phaser'`를 실행하는데, Phaser는 모듈 로드 시점에
@@ -135,6 +135,26 @@ describe('행동 카드', () => {
     clearBuff();
     expect(isIntercept()).toBe(false);
     expect(isEncircle()).toBe(false);
+  });
+});
+
+describe('EVASIVE', () => {
+  it('다른 행동 카드와 배타적이다', () => {
+    setActiveBuff('EVASIVE');
+    expect(isEvasive()).toBe(true);
+    expect(isIntercept()).toBe(false);
+    expect(isEncircle()).toBe(false);
+  });
+  it('스탯을 건드리지 않는다', () => {
+    setActiveBuff('EVASIVE');
+    expect(buffedHp('chaser', 2)).toBe(2);
+    expect(buffedSpeed('chaser', 90)).toBe(90);
+    expect(buffedFireInterval(1600)).toBe(1600);
+  });
+  it('clearBuff 후 false', () => {
+    setActiveBuff('EVASIVE');
+    clearBuff();
+    expect(isEvasive()).toBe(false);
   });
 });
 
