@@ -22,6 +22,8 @@
 - **최종 브랜치 리뷰 완료 (2026-08-05)**: Critical 0, Important 2 전부 처리. 제출 준비도 Ready.
 - **amendment 2026-08-05 (승제 승인)**: §3.4에 워밍업 호출 추가, MIT 라이선스 채택.
 - **amendment 2026-08-05 #2 (승제 승인)**: §3.4.1 강화 카드 7종 — 디렉터가 적 성능을 표적 조정. 배포 후 밸런싱 실플레이는 이 기능 반영 뒤에 수행한다.
+- **amendment 2026-08-06 #3 (승제 승인)**: §3.4.2 행동 카드 2종(`INTERCEPT`·`ENCIRCLE`) + `LAVA_HOTSPOT` 변주 + 판단 지표 2종. 승제 실플레이에서 "한 구석에 몰아두고 쓸어담기"라는 지배 전략이 발견돼, 디렉터가 무엇을 설계하든 무력화되는 문제를 차단한다.
+- [ ] 행동 카드·핫스팟 용암 구현 (텔레메트리·계약·엔티티·변주·프록시·문서)
 - [x] 강화 카드 구현 (계약·검증기·엔티티·실행기·프록시·문서) — 2026-08-05 완료. 전체 리뷰 SHIP 판정(Critical/Important 0). 라이브 실측 `docs/verification/2026-08-05-buff-cards-live.md`
 
 ---
@@ -79,8 +81,9 @@
   "wave": 2, "clearTimeSec": 34.2, "hpLost": 2,
   "damageSources": {"chaser": 1, "shooter": 1},
   "movement": {"quadrantTime": {"NW": 0.4, "NE": 0.1, "SW": 0.4, "SE": 0.1},
-               "wallHugRatio": 0.55, "dashCount": 6},
-  "combat": {"kills": {"chaser": 12, "shooter": 3, "splitter": 2}, "accuracy": 0.61},
+               "wallHugRatio": 0.55, "dashCount": 6, "hotspotConcentration": 0.31},
+  "combat": {"kills": {"chaser": 12, "shooter": 3, "splitter": 2}, "accuracy": 0.61,
+             "clusterRatio": 0.22},
   "upgrades": ["DAMAGE_UP", "MOVE_SPEED_UP"],
   "prevMutations": ["FOG"]
 }
@@ -92,7 +95,7 @@
   "composition": [
     {"type": "chaser|shooter|splitter", "count": 1, "spawn": "N|S|E|W|RING|PINCER|BEHIND", "elite": false}
   ],
-  "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
+  "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|LAVA_HOTSPOT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
   "taunt": "≤60자 — 로그의 실제 습관을 반드시 1개 지목",
   "intent": "≤100자 설계 의도(리포트·디렉터 로그 패널용)"
 }
@@ -121,6 +124,8 @@
 | `RAPID_FIRE` | shooter 발사 간격 ×0.6 (1600→960ms) | 탄을 잘 피함 (`hpLost` 낮음) |
 | `MARKSMAN` | shooter 탄속 +50%, 유지거리 +80 (260→340) | 원거리 안전지대 사용 (`wallHugRatio` 낮음) |
 | `VOLATILE` | splitter 분열 소형 2→3기 | 물량 처리 능숙 (`combat.kills.splitter`) |
+| `INTERCEPT` | 추격형이 현재 위치가 아니라 **0.4초 뒤 예상 위치**로 이동 | 키팅으로 적을 뭉쳐 쓸어담음 (`combat.clusterRatio` 낮음) |
+| `ENCIRCLE` | 추격형이 직진 대신 **포위 반경으로 흩어져** 조여듦 | 한 덩어리 수렴을 이용 (`combat.clusterRatio` 낮음) |
 
 **적용 순서**: `ENEMY_DEF` 기본값 → elite 배수 → 강화 카드. 단 splitter 분열 소형은 `hpOverride: 1`로 스폰되어 HP 버프를 받지 않는다(이속 버프는 받는다). 카드 비용을 소형까지 강화되는 것을 전제로 매기지 않았고, 걸리면 splitter 중심 웨이브의 난이도가 급등하기 때문이다 — 2026-08-05 전체 리뷰에서 확인·의도로 확정. 예) elite chaser HP = 2×3=6, `TOUGH` 적용 시 7. 이속은 elite 1.15 × `SWIFT` 1.25 = 1.4375배.
 
@@ -134,6 +139,32 @@
 **설계 의도**: `RELENTLESS`처럼 **강해지는 대신 약해지는 축**을 섞는다. 압박은 커지되 클리어 불가능해지지 않게 하는 장치다.
 
 **시스템 프롬프트**: 위 카드↔지표 대응표를 프롬프트에 넣어, 디렉터가 로그에서 관찰된 강점을 근거로 카드를 고르고 `intent`에 그 이유를 쓰게 한다. taunt도 그 강점을 지목해야 한다.
+
+### 3.4.2 행동 카드와 핫스팟 용암 — 지배 전략 차단 *(amendment 2026-08-06, 승제 승인)*
+
+**문제**: 추격형(chaser·splitter)이 전부 `moveToObject(플레이어 현재 위치)`로 직진하므로, 스폰 패턴이 `PINCER`든 `RING`이든 **몇 초 뒤 같은 덩어리로 수렴**한다. 플레이어는 한 구석으로 이동해 적을 몰아두고 한 번에 쓸어담으면 된다 — 디렉터가 무엇을 설계하든 같은 전략이 통한다. 이는 게임 난이도 문제가 아니라 **"AI가 나를 공략한다"는 컨셉 자체를 무력화**하는 결함이다(2026-08-06 승제 실플레이에서 발견).
+
+**해법 3축**:
+
+**(1) 행동 카드 2종** — 강화 카드 어휘를 "성능"에서 "행동"으로 확장한다. 비용·2연속 금지·웨이브 종료 초기화는 §3.4.1 규칙을 그대로 따른다.
+
+- `INTERCEPT`: 목표점 = `플레이어 위치 + 플레이어 속도 × 0.4초`. 아레나 경계로 클램프한다. 방향을 급히 꺾으면 빗나가야 한다 — 완벽한 요격이 아니라 페인트가 통하는 수준이 설계 의도다.
+- `ENCIRCLE`: 각 적에게 스폰 순서로 균등 분배한 고유 각도 슬롯을 준다. 플레이어 중심 반경 200px의 자기 각도 지점으로 이동하고, 링에 도달하면 반경을 초당 25px씩 줄여 조여든다. 직진하지 않으므로 한 덩어리로 뭉치지 않는다.
+
+**(2) 핫스팟 용암 `LAVA_HOTSPOT`** *(변주 enum 7→8)*: 플레이어가 그 웨이브에서 **가장 오래 머문 지점**에 반경 120px 원형 용암을 깐다. 피해는 기존 용암과 동일(0.5 HP/s).
+
+- **좌표는 디렉터가 정하지 않는다.** 디렉터는 `LAVA_HOTSPOT`이라는 어휘만 고르고, 실제 좌표는 엔진이 텔레메트리 히트맵에서 결정론적으로 계산한다. LLM이 "저기를 태워라"라고 수치를 부르는 게 아니라 "쟤 자리를 태워라"라는 **의도**만 말하고 엔진이 집행하는 구조 — §3.4 권한 경계 원칙이 그대로 지켜진다.
+- 로그에 좌표를 **넘기지 않는다**. 넘길 이유가 없고, 넘기면 LLM에게 수치 권한을 주는 셈이 된다.
+- 기존 `LAVA_LEFT`/`RIGHT`는 "화면 절반 차단"이라는 다른 역할로 유지한다.
+
+**(3) 판단 근거 지표 2종** — 카드를 만들어도 디렉터가 언제 쓸지 모르면 소용없다.
+
+- `combat.clusterRatio` (0~1): 활성 적들의 중심점 대비 평균 거리를 아레나 대각선 절반으로 정규화해 매 틱 샘플링한 평균. **낮을수록 적이 뭉쳐 있었다** = 몰아서 쓸리고 있다.
+- `movement.hotspotConcentration` (0~1): 히트맵 최다 셀의 체류 시간 비율. **높을수록 한 자리에 오래 있었다.**
+
+**시스템 프롬프트 대응**: `clusterRatio`가 낮으면 `INTERCEPT`/`ENCIRCLE`을, `hotspotConcentration`이 높으면 `LAVA_HOTSPOT`을 고르도록 지시하고, 그 근거를 `intent`에 쓰게 한다.
+
+**구현 우선순위**: `INTERCEPT` → `LAVA_HOTSPOT` → `ENCIRCLE`. 앞의 둘만으로도 지배 전략은 깨진다. `ENCIRCLE`이 구현이 가장 무거우므로 마감 압박 시 첫 컷 대상이다.
 
 **워밍업 호출** *(amendment 2026-08-05 — 승제 승인)*: 타이틀 화면 진입 시 프록시에 디렉티브 요청 1회를 미리 발사한다. 응답은 버린다.
 - **이유**: 하루 첫 호출은 API의 최초 스키마 컴파일 비용과 Edge Function 콜드스타트가 겹쳐 4초 타임아웃을 넘길 확률이 높다. 하필 그 호출이 웨이브 1→2 인터벌 — 게임의 핵심(디렉터가 내 플레이를 읽는 첫 순간)이라, 심사자가 한 판만 플레이하면 LLM 경로를 한 번도 보지 못할 수 있다.
