@@ -53,6 +53,9 @@ export class ArenaScene extends Phaser.Scene {
   /** 가장 최근에 완료된 웨이브의 buff(다음 requestDirective 호출에 씀) — 다음 디렉티브가 resolve되는 즉시(.then())
    *  그 directive.buff로 갱신된다. 웨이브 종료 시 clearMutation→clearBuff로 활성 버프 자체는 별도로 리셋된다(waveRunner.ts). */
   prevBuff: BuffCard = 'NONE';
+  /** 가장 최근에 완료된 웨이브의 핫스팟(플레이어가 가장 오래 머문 지점) — LAVA_HOTSPOT이 실제 좌표로 소비한다.
+   *  텔레메트리가 다음 웨이브용으로 교체되기 직전, snapshotCurrentWaveLog에서 뽑아둔다(교체 후면 빈 그리드라 중앙이 나온다). */
+  lastHotspot: { x: number; y: number } | null = null;
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
   lastDirectiveFromLLM = false;
   /** Task 8 로그 패널이 소비 — 가장 최근에 알려진 디렉티브(오프닝 포함). 인터벌 중엔 이미 다음 웨이브 몫으로 갱신된다. */
@@ -109,6 +112,7 @@ export class ArenaScene extends Phaser.Scene {
     this.mutationHistory = [];
     this.prevMutation = 'NONE';
     this.prevBuff = 'NONE';
+    this.lastHotspot = null;
     this.currentWave = 1;
     this.lastDirectiveFromLLM = false;
     this.lastDirective = OPENING_WAVE;
@@ -148,7 +152,10 @@ export class ArenaScene extends Phaser.Scene {
     if (this.playerDead) return;
 
     const dt = delta / 1000;
-    this.telemetry.tick(this.player.x, this.player.y, this.scale.width, this.scale.height, dt);
+    this.telemetry.tick(
+      this.player.x, this.player.y, this.scale.width, this.scale.height, dt,
+      this.enemies.getChildren().filter((e) => e.active) as unknown as { x: number; y: number }[],
+    );
 
     const fireAngles = this.player.update(time, delta, this.enemies);
     if (fireAngles.length > 0) playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
@@ -320,6 +327,9 @@ export class ArenaScene extends Phaser.Scene {
     const clearTimeSec = (this.time.now - this.waveStartAt) / 1000;
     this.mutationHistory.push(this.activeMutation);
     const log = this.telemetry.finish(wave, clearTimeSec, [...this.chosenUpgrades], [...this.mutationHistory]);
+    // 텔레메트리가 교체되기 전(이 함수는 동기 실행되고, onWaveCleared의 `new WaveTelemetry()` 교체는
+    // 이 함수가 반환한 뒤에 일어난다) 핫스팟을 뽑아둔다 — 순서를 바꾸면 빈 그리드에서 중앙 좌표가 나온다.
+    this.lastHotspot = this.telemetry.getHotspot();
     log.damageSources = { ...log.damageSources };
     log.combat = { ...log.combat, kills: { ...log.combat.kills } };
     log.hpLost = this.hpLostThisWave; // damageSources 합산 대신 실제 피격 횟수(mutation 피해 포함)로 보정

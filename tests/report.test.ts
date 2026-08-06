@@ -7,8 +7,8 @@ const fakeWave = (over: Partial<WaveLog> = {}): WaveLog => ({
   clearTimeSec: 30,
   hpLost: 0,
   damageSources: {},
-  movement: { quadrantTime: { NW: 0.25, NE: 0.25, SW: 0.25, SE: 0.25 }, wallHugRatio: 0.2, dashCount: 3 },
-  combat: { kills: { chaser: 5 }, accuracy: 0.6 },
+  movement: { quadrantTime: { NW: 0.25, NE: 0.25, SW: 0.25, SE: 0.25 }, wallHugRatio: 0.2, dashCount: 3, hotspotConcentration: 0 },
+  combat: { kills: { chaser: 5 }, accuracy: 0.6, clusterRatio: 0 },
   upgrades: [],
   prevMutations: [],
   ...over,
@@ -19,8 +19,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe('buildRunSummary', () => {
   it('킬·명중률·대시·도달 웨이브를 웨이브 로그에서 집계한다', () => {
     const waves = [
-      fakeWave({ wave: 1, combat: { kills: { chaser: 5 }, accuracy: 0.5 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.2, dashCount: 2 } }),
-      fakeWave({ wave: 2, combat: { kills: { shooter: 3, splitter: 2 }, accuracy: 0.9 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.4, dashCount: 4 } }),
+      fakeWave({ wave: 1, combat: { kills: { chaser: 5 }, accuracy: 0.5, clusterRatio: 0 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.2, dashCount: 2, hotspotConcentration: 0 } }),
+      fakeWave({ wave: 2, combat: { kills: { shooter: 3, splitter: 2 }, accuracy: 0.9, clusterRatio: 0 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.4, dashCount: 4, hotspotConcentration: 0 } }),
     ];
     const s = buildRunSummary('WIN', waves, ['DAMAGE_UP']);
     expect(s.totalKills).toBe(10);
@@ -101,19 +101,19 @@ describe('splitReportTitle', () => {
 
 describe('pickFallbackTitle', () => {
   it('wallHug 평균 0.5 이상이면 "벽면 곡예사"', () => {
-    const s = buildRunSummary('WIN', [fakeWave({ movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.6, dashCount: 0 } })], []);
+    const s = buildRunSummary('WIN', [fakeWave({ movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.6, dashCount: 0, hotspotConcentration: 0 } })], []);
     expect(pickFallbackTitle(s)).toBe('벽면 곡예사');
   });
   it('대시 합 40 이상이면 "회피 기동 전문"', () => {
-    const s = buildRunSummary('WIN', [fakeWave({ movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 45 } })], []);
+    const s = buildRunSummary('WIN', [fakeWave({ movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 45, hotspotConcentration: 0 } })], []);
     expect(pickFallbackTitle(s)).toBe('회피 기동 전문');
   });
   it('명중률 0.7 이상이면 "정밀 사수"', () => {
-    const s = buildRunSummary('WIN', [fakeWave({ combat: { kills: {}, accuracy: 0.8 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 0 } })], []);
+    const s = buildRunSummary('WIN', [fakeWave({ combat: { kills: {}, accuracy: 0.8, clusterRatio: 0 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 0, hotspotConcentration: 0 } })], []);
     expect(pickFallbackTitle(s)).toBe('정밀 사수');
   });
   it('아무 규칙도 안 맞으면 "생존자"', () => {
-    const s = buildRunSummary('WIN', [fakeWave({ combat: { kills: {}, accuracy: 0.3 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 0 } })], []);
+    const s = buildRunSummary('WIN', [fakeWave({ combat: { kills: {}, accuracy: 0.3, clusterRatio: 0 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 0, hotspotConcentration: 0 } })], []);
     expect(pickFallbackTitle(s)).toBe('생존자');
   });
 });

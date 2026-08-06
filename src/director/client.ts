@@ -9,8 +9,8 @@ export const sessionId = crypto.randomUUID();
 // 워밍업 전용 더미 로그 — 실플레이 로그가 없는 타이틀 화면에서 보내는 최소 유효 형태(스펙 3.4 amendment).
 const WARMUP_LOG: WaveLog = {
   wave: 1, clearTimeSec: 0, hpLost: 0, damageSources: {},
-  movement: { quadrantTime: { NW: 0, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0, dashCount: 0 },
-  combat: { kills: {}, accuracy: 0 }, upgrades: [], prevMutations: [],
+  movement: { quadrantTime: { NW: 0, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0, dashCount: 0, hotspotConcentration: 0 },
+  combat: { kills: {}, accuracy: 0, clusterRatio: 0 }, upgrades: [], prevMutations: [],
 };
 
 export async function requestDirective(

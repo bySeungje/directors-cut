@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 export const ENEMY_TYPES = ['chaser', 'shooter', 'splitter'] as const;
 export const SPAWN_PATTERNS = ['N', 'S', 'E', 'W', 'RING', 'PINCER', 'BEHIND'] as const;
-export const MUTATIONS = ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] as const;
-export const BUFF_CARDS = ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE'] as const;
+export const MUTATIONS = ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'LAVA_HOTSPOT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] as const;
+export const BUFF_CARDS = ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE'] as const;
 
 export type EnemyType = (typeof ENEMY_TYPES)[number];
 export type SpawnPattern = (typeof SPAWN_PATTERNS)[number];
@@ -33,8 +33,8 @@ export interface WaveLog {
   clearTimeSec: number;
   hpLost: number;
   damageSources: Partial<Record<EnemyType, number>>;
-  movement: { quadrantTime: { NW: number; NE: number; SW: number; SE: number }; wallHugRatio: number; dashCount: number };
-  combat: { kills: Partial<Record<EnemyType, number>>; accuracy: number };
+  movement: { quadrantTime: { NW: number; NE: number; SW: number; SE: number }; wallHugRatio: number; dashCount: number; hotspotConcentration: number };
+  combat: { kills: Partial<Record<EnemyType, number>>; accuracy: number; clusterRatio: number };
   upgrades: string[];
   prevMutations: Mutation[];
 }
