@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setActiveBuff, clearBuff, getActiveBuff,
   buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, buffedSplitCount,
+  isIntercept, isEncircle, encircleRadius,
 } from '../src/game/buffs';
 
 // mutations.ts는 최상단에서 `import Phaser from 'phaser'`를 실행하는데, Phaser는 모듈 로드 시점에
@@ -96,6 +97,37 @@ describe('NONE — 아무것도 바꾸지 않는다', () => {
     expect(buffedKeepDistance(260)).toBe(260);
     expect(buffedBulletSpeed(300)).toBe(300);
     expect(buffedSplitCount()).toBe(2);
+  });
+});
+
+describe('행동 카드', () => {
+  it('INTERCEPT/ENCIRCLE 판별이 배타적이다', () => {
+    setActiveBuff('INTERCEPT');
+    expect(isIntercept()).toBe(true);
+    expect(isEncircle()).toBe(false);
+    setActiveBuff('ENCIRCLE');
+    expect(isIntercept()).toBe(false);
+    expect(isEncircle()).toBe(true);
+  });
+  it('행동 카드는 스탯을 건드리지 않는다', () => {
+    setActiveBuff('INTERCEPT');
+    expect(buffedHp('chaser', 2)).toBe(2);
+    expect(buffedSpeed('chaser', 90)).toBe(90);
+    setActiveBuff('ENCIRCLE');
+    expect(buffedHp('shooter', 3)).toBe(3);
+    expect(buffedFireInterval(1600)).toBe(1600);
+  });
+  it('포위 반경이 초당 25px씩 줄고 60에서 멈춘다', () => {
+    setActiveBuff('ENCIRCLE', 10_000);
+    expect(encircleRadius(10_000)).toBe(200);
+    expect(encircleRadius(14_000)).toBe(100);      // 4초 × 25 = 100 감소
+    expect(encircleRadius(60_000)).toBe(60);       // 하한
+  });
+  it('clearBuff 후에는 행동 판별이 모두 false다', () => {
+    setActiveBuff('ENCIRCLE', 5000);
+    clearBuff();
+    expect(isIntercept()).toBe(false);
+    expect(isEncircle()).toBe(false);
   });
 });
 

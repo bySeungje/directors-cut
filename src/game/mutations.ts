@@ -10,6 +10,7 @@ const FOG_RADIUS = 240;
 const FOG_ALPHA = 0.85;
 const SHRINK_RATIO = 0.12; // 아레나 경계 상하좌우 12%씩 축소
 const SPEED_SURGE_MULT = 1.25; // 적 이속 +25%
+const HOTSPOT_RADIUS = 120;
 
 // 재량 결정 — 브리프는 LAVA/SHRINK 경계를 "반투명"으로만 지정(정량값 없음). FOG(0.85)와 구분되는 값으로 선택.
 const ZONE_ALPHA = 0.35;
@@ -26,6 +27,8 @@ interface MutationState {
   acc: number;
   shrinkInner: Phaser.Geom.Rectangle | null;
   fogRT: Phaser.GameObjects.RenderTexture | null;
+  /** LAVA_HOTSPOT 중심 좌표 — scene.lastHotspot(플레이어가 가장 오래 머문 지점)에서 스폰 시점에 고정된다. */
+  hotspot?: { x: number; y: number };
 }
 
 let state: MutationState | null = null;
@@ -41,6 +44,9 @@ export function applyMutation(scene: ArenaScene, mutation: Mutation): void {
     case 'LAVA_LEFT':
     case 'LAVA_RIGHT':
       setupLava(scene, mutation);
+      break;
+    case 'LAVA_HOTSPOT':
+      setupHotspot(scene);
       break;
     case 'FOG':
       setupFog(scene);
@@ -64,6 +70,11 @@ export function updateMutation(scene: ArenaScene, dt: number): void {
     case 'LAVA_RIGHT':
       tickZoneDamage(scene, dt, scene.player.x >= scene.scale.width / 2);
       break;
+    case 'LAVA_HOTSPOT': {
+      const h = state.hotspot;
+      if (h) tickZoneDamage(scene, dt, Phaser.Math.Distance.Between(scene.player.x, scene.player.y, h.x, h.y) < HOTSPOT_RADIUS);
+      break;
+    }
     case 'SHRINK_ARENA':
       tickShrink(scene, dt);
       break;
@@ -96,6 +107,18 @@ function setupLava(scene: ArenaScene, mutation: 'LAVA_LEFT' | 'LAVA_RIGHT') {
   g.fillStyle(DIRECTOR_RED, ZONE_ALPHA);
   if (mutation === 'LAVA_LEFT') g.fillRect(0, 0, half, h);
   else g.fillRect(half, 0, half, h);
+  state!.disposables.push(g);
+}
+
+// ── LAVA_HOTSPOT ──────────────────────────────────────────────────────────
+
+/** 플레이어가 가장 오래 머문 지점을 태운다. 좌표는 엔진이 텔레메트리에서 계산하며 LLM은 관여하지 않는다(스펙 §3.4.2). */
+function setupHotspot(scene: ArenaScene) {
+  const h = scene.lastHotspot ?? { x: scene.scale.width / 2, y: scene.scale.height / 2 };
+  state!.hotspot = h;
+  const g = scene.add.graphics().setDepth(ZONE_TINT_DEPTH);
+  g.fillStyle(DIRECTOR_RED, ZONE_ALPHA);
+  g.fillCircle(h.x, h.y, HOTSPOT_RADIUS);
   state!.disposables.push(g);
 }
 

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
-import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance } from './buffs';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, INTERCEPT_LEAD_SEC } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -295,6 +295,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   private moveSpeed = 0;
   private lastFireAt = 0;
+  /** ENCIRCLE 포위 지점의 고유 각도 슬롯 — 황금각 분산으로 인접 스폰이 같은 방향을 잡지 않는다. */
+  private slotAngle = 0;
+  private static slotSeq = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, texture: string = ENEMY_TEX.chaser) {
     super(scene, x, y, texture);
@@ -310,6 +313,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.enemyType = type;
     this.elite = elite;
     this.canSplit = opts?.canSplit ?? type === 'splitter';
+    this.slotAngle = (Enemy.slotSeq++ * 2.39996) % (Math.PI * 2);
 
     this.setTexture(ENEMY_TEX[type]);
     const scale = opts?.scaleOverride ?? (elite ? ELITE_SCALE : 1);
@@ -345,8 +349,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     switch (this.enemyType) {
       case 'chaser':
       case 'splitter':
-        // splitter 생존 중 이동 패턴은 브리프에 명시 없음 → chaser와 동일한 직진 추격(재량 결정, 분열은 사망 시에만 고유)
-        this.scene.physics.moveToObject(this, player, this.moveSpeed);
+        // splitter 생존 중 이동 패턴은 브리프에 명시 없음 → chaser와 동일한 분기(재량 결정, 분열은 사망 시에만 고유)
+        if (isEncircle()) this.updateEncircle(time, player);
+        else if (isIntercept()) this.updateIntercept(player);
+        else this.scene.physics.moveToObject(this, player, this.moveSpeed);
         this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
         break;
       case 'shooter':
@@ -355,6 +361,24 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (this.elite) this.setAlpha(0.75 + 0.25 * Math.sin(time / 150)); // 발광 — 펄스로 구현(재량 결정)
+  }
+
+  /** 플레이어가 "가려는 곳"을 노린다. 방향을 급히 꺾으면 빗나간다 — 페인트가 통해야 한다(스펙 §3.4.2). */
+  private updateIntercept(player: Player) {
+    const w = this.scene.scale.width;
+    const h = this.scene.scale.height;
+    const tx = Phaser.Math.Clamp(player.x + player.body.velocity.x * INTERCEPT_LEAD_SEC, 0, w);
+    const ty = Phaser.Math.Clamp(player.y + player.body.velocity.y * INTERCEPT_LEAD_SEC, 0, h);
+    this.scene.physics.moveTo(this, tx, ty, this.moveSpeed);
+  }
+
+  /** 직진하지 않고 자기 각도 슬롯의 포위 지점으로 이동한다. 반경이 줄어들며 조여든다. */
+  private updateEncircle(time: number, player: Player) {
+    const r = encircleRadius(time);
+    const tx = player.x + Math.cos(this.slotAngle) * r;
+    const ty = player.y + Math.sin(this.slotAngle) * r;
+    if (Phaser.Math.Distance.Between(this.x, this.y, tx, ty) < 8) this.body.setVelocity(0, 0);
+    else this.scene.physics.moveTo(this, tx, ty, this.moveSpeed);
   }
 
   private updateShooter(

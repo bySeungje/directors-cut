@@ -15,7 +15,7 @@ const OPPOSITE_EDGE: Record<Edge, Edge> = { N: 'S', S: 'N', E: 'W', W: 'E' };
 /** 디렉티브를 실제 스폰+mutation으로 실행한다. SPAWN_STORM이면 4초 간격 3분할 스폰. */
 export function runDirective(scene: ArenaScene, d: Directive): void {
   applyMutation(scene, d.mutation);
-  setActiveBuff(d.buff);
+  setActiveBuff(d.buff, scene.time.now);
 
   if (d.mutation === 'SPAWN_STORM') {
     // count가 작은 composition(예: count=1,2)은 splitIntoStormBatches가 뒤쪽 배치를 빈 배열로 반환할 수 있다.

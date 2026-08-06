@@ -3,16 +3,35 @@ import { BuffCard, EnemyType } from '../contracts/directive';
 /** 활성 강화 카드. 웨이브마다 setActiveBuff로 설정하고 웨이브 종료 시 clearBuff로 초기화한다(누적 금지). */
 let active: BuffCard = 'NONE';
 
-export function setActiveBuff(card: BuffCard): void {
+export const INTERCEPT_LEAD_SEC = 0.4;
+const ENCIRCLE_START_RADIUS = 200;
+const ENCIRCLE_MIN_RADIUS = 60;
+const ENCIRCLE_CLOSE_PER_SEC = 25;
+
+/** ENCIRCLE이 활성화된 시각(ms, scene.time.now 기준) — encircleRadius가 조여드는 정도를 계산하는 기준점. */
+let activatedAt = 0;
+
+export function setActiveBuff(card: BuffCard, now = 0): void {
   active = card;
+  activatedAt = now;
 }
 
 export function clearBuff(): void {
   active = 'NONE';
+  activatedAt = 0;
 }
 
 export function getActiveBuff(): BuffCard {
   return active;
+}
+
+export function isIntercept(): boolean { return active === 'INTERCEPT'; }
+export function isEncircle(): boolean { return active === 'ENCIRCLE'; }
+
+/** 포위 반경 — 카드 활성 시점부터 초당 25px씩 조여든다. */
+export function encircleRadius(now: number): number {
+  const elapsedSec = Math.max(0, (now - activatedAt) / 1000);
+  return Math.max(ENCIRCLE_MIN_RADIUS, ENCIRCLE_START_RADIUS - elapsedSec * ENCIRCLE_CLOSE_PER_SEC);
 }
 
 /** elite 배수까지 적용된 HP에 카드 효과를 얹는다. 최소 1 보장. */
