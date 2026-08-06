@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
-import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, INTERCEPT_MAX_LEAD_SEC } from './buffs';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -382,10 +382,20 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   /** 직진하지 않고 자기 각도 슬롯의 포위 지점으로 이동한다. 반경이 줄어들며 조여든다. */
   private updateEncircle(time: number, player: Player) {
+    if (encircleClosed(time)) {
+      // 조임 완료 — 포위를 풀고 덮친다. 링 위에 계속 멈춰 있으면 적이 영원히 닿지 못한다.
+      // 단 현재 위치가 아니라 예측점으로 덮쳐야 한다. moveToObject로 되돌리면 전원이 같은 점으로
+      // 수렴해 이 카드가 막으려던 "뒤에 한 덩어리"가 그대로 재현된다(스펙 §3.4.2 실측: 포위면 1.25).
+      const p = this.predictedPoint(player);
+      this.scene.physics.moveTo(this, p.x, p.y, this.moveSpeed);
+      return;
+    }
     const r = encircleRadius(time);
     const p = this.predictedPoint(player); // 링 중심도 예측점 — 현재 위치 기준이면 뒤에 한 덩어리로 늘어선다
-    const tx = p.x + Math.cos(this.slotAngle) * r;
-    const ty = p.y + Math.sin(this.slotAngle) * r;
+    // 링 오프셋을 더한 뒤 다시 클램프한다 — predictedPoint만 클램프하면 벽에 붙은 플레이어를 포위할 때
+    // 목표점이 아레나 밖으로 나가 적이 화면 밖으로 빠진다(Enemy에는 world bounds 충돌이 없다).
+    const tx = Phaser.Math.Clamp(p.x + Math.cos(this.slotAngle) * r, 0, this.scene.scale.width);
+    const ty = Phaser.Math.Clamp(p.y + Math.sin(this.slotAngle) * r, 0, this.scene.scale.height);
     if (Phaser.Math.Distance.Between(this.x, this.y, tx, ty) < 8) this.body.setVelocity(0, 0);
     else this.scene.physics.moveTo(this, tx, ty, this.moveSpeed);
   }

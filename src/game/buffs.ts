@@ -7,6 +7,7 @@ let active: BuffCard = 'NONE';
  *  빗나가 오히려 거리가 벌어진다(스펙 §3.4.2 실측: 상한 2.5초일 때 159→166). */
 export const INTERCEPT_MAX_LEAD_SEC = 1.5;
 const ENCIRCLE_START_RADIUS = 200;
+/** 포위 반경 하한. 여기 닿으면 조임이 끝난 것으로 보고 포위를 풀어 돌진한다(스펙 §3.4.2). */
 const ENCIRCLE_MIN_RADIUS = 60;
 const ENCIRCLE_CLOSE_PER_SEC = 25;
 
@@ -31,6 +32,12 @@ export function isIntercept(): boolean { return active === 'INTERCEPT'; }
 export function isEncircle(): boolean { return active === 'ENCIRCLE'; }
 
 /** 포위 반경 — 카드 활성 시점부터 초당 25px씩 조여든다. */
+/** 조임이 끝났는가 — 이때부터 포위를 풀고 덮친다. 링 위에 멈춰 있으면 접촉 판정 밖에 대치선만
+ *  생겨 포위 카드가 오히려 플레이어를 안전하게 만든다(스펙 §3.4.2 실측). */
+export function encircleClosed(now: number): boolean {
+  return encircleRadius(now) <= ENCIRCLE_MIN_RADIUS;
+}
+
 export function encircleRadius(now: number): number {
   const elapsedSec = Math.max(0, (now - activatedAt) / 1000);
   return Math.max(ENCIRCLE_MIN_RADIUS, ENCIRCLE_START_RADIUS - elapsedSec * ENCIRCLE_CLOSE_PER_SEC);

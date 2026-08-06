@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setActiveBuff, clearBuff, getActiveBuff,
   buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, buffedSplitCount,
-  isIntercept, isEncircle, encircleRadius,
+  isIntercept, isEncircle, encircleRadius, encircleClosed,
 } from '../src/game/buffs';
 
 // mutations.ts는 최상단에서 `import Phaser from 'phaser'`를 실행하는데, Phaser는 모듈 로드 시점에
@@ -117,11 +117,18 @@ describe('행동 카드', () => {
     expect(buffedHp('shooter', 3)).toBe(3);
     expect(buffedFireInterval(1600)).toBe(1600);
   });
-  it('포위 반경이 초당 25px씩 줄고 60에서 멈춘다', () => {
+  it('포위 반경이 초당 25px씩 줄고 하한에서 멈춘다', () => {
     setActiveBuff('ENCIRCLE', 10_000);
     expect(encircleRadius(10_000)).toBe(200);
     expect(encircleRadius(14_000)).toBe(100);      // 4초 × 25 = 100 감소
     expect(encircleRadius(60_000)).toBe(60);       // 하한
+  });
+  it('조임이 끝나면 포위를 풀고 돌진한다', () => {
+    // 링 위에 계속 멈춰 있으면 접촉 판정(25px) 밖에 대치선만 생겨, 포위 카드가 오히려
+    // '가만히 서 있기'를 안전하게 만든다(2026-08-06 최종 리뷰 발견 — 실측 접촉 1029 대 30).
+    setActiveBuff('ENCIRCLE', 0);
+    expect(encircleClosed(0)).toBe(false);          // 시작 직후엔 아직 조이는 중
+    expect(encircleClosed(999_999)).toBe(true);     // 하한 도달 후엔 돌진
   });
   it('clearBuff 후에는 행동 판별이 모두 false다', () => {
     setActiveBuff('ENCIRCLE', 5000);
