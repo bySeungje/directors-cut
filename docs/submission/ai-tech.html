@@ -209,13 +209,15 @@
   "upgrades": ["DAMAGE_UP", "MOVE_SPEED_UP"],
   "prevMutations": ["FOG"]
 }</pre>
-  <p>디렉터가 돌려주는 디렉티브 — 자유 텍스트가 아니라 이 다섯 필드로 제한된 JSON:</p>
+  <p>디렉터가 돌려주는 디렉티브 — 자유 텍스트가 아니라 이 여섯 필드로 제한된 JSON:</p>
   <pre>{
   "composition": [
     {"type": "chaser|shooter|splitter", "count": 1, "spawn": "N|S|E|W|RING|PINCER|BEHIND", "elite": false}
   ],
   "mutation": "NONE|LAVA_LEFT|LAVA_RIGHT|LAVA_HOTSPOT|FOG|SPEED_SURGE|SHRINK_ARENA|SPAWN_STORM",
-  "buff": "NONE|TOUGH|SWIFT|RELENTLESS|RAPID_FIRE|MARKSMAN|VOLATILE|INTERCEPT|ENCIRCLE",
+  "buff": "NONE|TOUGH|SWIFT|RELENTLESS|RAPID_FIRE|MARKSMAN|VOLATILE|INTERCEPT|ENCIRCLE|EVASIVE",
+  "deny": "NONE|DAMAGE_UP|FIRE_RATE_UP|MOVE_SPEED_UP|HP_PLUS|
+           PIERCE|MULTI_SHOT|BULLET_SPEED_UP|DASH_CD_DOWN",
   "taunt": "60자 이내 — 로그의 실제 습관 1개 지목",
   "intent": "100자 이내 — 설계 의도"
 }</pre>
@@ -231,11 +233,8 @@
   <pre>너는 아케이드 게임의 'AI 디렉터'다. 플레이어의 웨이브 로그를 읽고 다음 웨이브를 설계한다.
 규칙:
 - composition 총 비용(chaser 1, shooter 2, splitter 2, elite는 ×3)은 예산 이하로. 예산은 사용자 메시지에 준다.
-- taunt는 한국어 60자 이내. 반드시 로그에서 실제로 관찰되는 습관 하나를 콕 집어 지목하라(예: 벽 붙기
-  wallHugRatio, 특정 사분면 체류, 낮은 명중률, 대시 남용, 특정 적에게 반복 피격, 업그레이드 성향). 그리고
-  설계가 그 습관을 실제로 공략해야 한다.
-- 해석 규칙: hpLost가 damageSources 합보다 크면 그 차이는 지형 피해(용암 존·축소 경계)다 — 지형에 자주
-  타는 플레이어에게는 그 습관을 지목할 수 있다.
+- taunt는 한국어 60자 이내. 반드시 로그에서 실제로 관찰되는 습관 하나를 콕 집어 지목하라(예: 벽 붙기 wallHugRatio, 특정 사분면 체류, 낮은 명중률, 대시 남용, 특정 적에게 반복 피격, 업그레이드 성향). 그리고 설계가 그 습관을 실제로 공략해야 한다.
+- 해석 규칙: hpLost가 damageSources 합보다 크면 그 차이는 지형 피해(용암 존·축소 경계)다 — 지형에 자주 타는 플레이어에게는 그 습관을 지목할 수 있다.
 - 직전 mutation과 같은 것은 고르지 마라.
 - 어렵지만 이길 수 있게: 플레이어가 고전한 요소는 유지하되 물량으로 압살하지 마라.
 - intent는 설계 의도 100자 이내.
@@ -248,18 +247,21 @@
     VOLATILE(splitter 분열 2->3기) — 분열형 처치가 많고 물량 처리가 능숙할 때
     INTERCEPT(추격형이 이동 방향 앞을 예측 요격) — 적을 뭉쳐서 한 번에 쓸어담을 때
     ENCIRCLE(추격형이 포위 반경으로 흩어져 조여듦) — 한 덩어리로 몰아두고 처리할 때
+    EVASIVE(전 적이 좌우로 흔들며 접근해 자동 조준탄을 흘림) — 가만히 서서 자동 사격으로 녹일 때
     NONE — 강화 없이 구성만으로 압박할 때
 - 해석 규칙: clusterRatio가 낮으면(0.3 미만) 적이 한 덩어리로 뭉쳐 있었다는 뜻이다 — 플레이어가 몰아서 쓸어담고 있다. INTERCEPT나 ENCIRCLE로 그 수렴을 깨라.
 - 해석 규칙: hotspotConcentration이 높으면(0.4 초과) 한 자리에 오래 버텼다는 뜻이다 — LAVA_HOTSPOT은 그 자리를 정확히 태운다.
 - 강화 카드는 비용이 든다: NONE이 아니면 예산의 25%가 차감되므로 적 수를 그만큼 줄여야 한다.
 - 직전 웨이브와 같은 카드는 고르지 마라.
-- intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.</pre>
-  <p class="footnote">사용자 메시지: <code class="inline">웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}. 직전 buff: ${prevBuff}.</code> + 플레이 로그 JSON.</p>
+- intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.
+- deny는 다음 업그레이드 3택에서 뺄 항목이다. upgrades 로그에서 플레이어가 반복해서 고른 축을 읽고 그 성장을 막아라.
+  고를 수 있는 값: NONE, DAMAGE_UP, FIRE_RATE_UP, MOVE_SPEED_UP, HP_PLUS, PIERCE, MULTI_SHOT, BULLET_SPEED_UP, DASH_CD_DOWN.
+- deny는 예산을 쓰지 않는다. 직전 웨이브와 같은 것은 고르지 마라.
+- deny를 골랐다면 taunt가 그 사실을 지목해야 한다(예: "화력만 올리는군. 그 길은 막았다").</pre>
+  <p class="footnote">사용자 메시지: <code class="inline">웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}. 직전 buff: ${prevBuff}. 직전 deny: ${prevDeny}.</code> + 플레이 로그 JSON.</p>
 
   <h3>리포트 생성 (mode: 'report')</h3>
-  <pre>너는 게임의 AI 디렉터다. 방금 끝난 판의 전체 로그를 보고, 플레이어의 스타일을 분석하는 리포트를
-한국어 400자 내외로 써라. 마지막 줄에 "칭호: &lt;4~8자 칭호&gt;" 형식으로 칭호를 붙여라. 관찰된 사실만
-근거로, 디렉터의 시점(1인칭)으로, 패배시켰다면 여유롭게, 패배했다면 인정하며.</pre>
+  <pre>너는 게임의 AI 디렉터다. 방금 끝난 판의 전체 로그를 보고, 플레이어의 스타일을 분석하는 리포트를 한국어 400자 내외로 써라. 마지막 줄에 "칭호: &lt;4~8자 칭호&gt;" 형식으로 칭호를 붙여라. 관찰된 사실만 근거로, 디렉터의 시점(1인칭)으로, 패배시켰다면 여유롭게, 패배했다면 인정하며.</pre>
   <p class="footnote">
     호출 파라미터: model <code class="inline">claude-haiku-4-5</code>, max_tokens 500(디렉티브)/700(리포트).
     디렉티브 호출은 <code class="inline">output_config: { format: { type: 'json_schema', schema: DIRECTIVE_JSON_SCHEMA } }</code>로
@@ -271,7 +273,7 @@
 <section>
   <h2>1.4 권한 경계 설계</h2>
   <p>
-    디렉터에게 준 것은 코드가 아니라 어휘다. composition·mutation·buff·taunt·intent 다섯 필드 바깥으로는
+    디렉터에게 준 것은 코드가 아니라 어휘다. composition·mutation·buff·deny·taunt·intent 여섯 필드 바깥으로는
     어떤 값도 낼 수 없고, 그 안에서도 API 스키마(서버)와 zod(클라이언트) 두 번을 거쳐야 엔진에 닿는다.
     강화 카드도 같은 원칙을 따른다 — 디렉터는 적 구성뿐 아니라 적 성능도 조정하되, 수치는 정하지 못하고
     카드만 고른다. 이렇게 설계한 이유는 하나다 — 심사자가 이 게임을 직접 플레이하는 동안 LLM 쪽에서 무슨
@@ -280,10 +282,11 @@
   <table>
     <tr><th style="width:16%">층위</th><th>규칙</th></tr>
     <tr><td>스키마</td><td>zod 검증 — 필드 누락·enum 밖 값·문자열 길이 초과 시 거부</td></tr>
-    <tr><td>예산</td><td><code class="inline">budgetFor(wave) = 8 + wave×4 + max(0, wave−5)×12</code> 이하만 허용(비용: chaser 1·shooter 2·splitter 2, elite ×3). 난이도 곡선을 LLM이 깨뜨릴 수 없다</td></tr>
+    <tr><td>예산</td><td><code class="inline">budgetFor(wave) = 8 + wave×4 + max(0, wave−4)²×6</code> 이하만 허용(비용: chaser 1·shooter 2·splitter 2, elite ×3). 난이도 곡선을 LLM이 깨뜨릴 수 없다</td></tr>
     <tr><td>반복</td><td>직전 mutation과 동일하면 검증 계층이 NONE으로 강제 교체</td></tr>
     <tr><td>시간</td><td>4초 초과·네트워크 오류·검증 실패 → 사전 제작 폴백 뱅크(웨이브별 3종×6 + 오프닝 1)에서 무작위 선택. 대사도 뱅크에 포함돼 있어 플레이어는 폴백 여부를 알 수 없다</td></tr>
-    <tr><td>강화 카드</td><td>어휘 9종 enum(NONE·TOUGH·SWIFT·RELENTLESS·RAPID_FIRE·MARKSMAN·VOLATILE·INTERCEPT·ENCIRCLE) 중 1개만 허용 — 성능 조정 7종 + 행동 지정 2종. 비용은 해당 웨이브 예산의 25%(반올림, NONE은 0)가 자동 차감돼 물량이 그만큼 준다. 직전 웨이브와 동일 카드 금지 — 위반 시 NONE으로 강제 교체. 웨이브 종료 시 초기화돼 절대 누적되지 않는다</td></tr>
+    <tr><td>강화 카드</td><td>어휘 10종 enum(NONE·TOUGH·SWIFT·RELENTLESS·RAPID_FIRE·MARKSMAN·VOLATILE·INTERCEPT·ENCIRCLE·EVASIVE) 중 1개만 허용 — 성능 조정 7종 + 행동 지정 3종. 비용은 해당 웨이브 예산의 25%(반올림, NONE은 0)가 자동 차감돼 물량이 그만큼 준다. 직전 웨이브와 동일 카드 금지 — 위반 시 NONE으로 강제 교체. 웨이브 종료 시 초기화돼 절대 누적되지 않는다</td></tr>
+    <tr><td>업그레이드 봉인</td><td>어휘 9종 enum(NONE·DAMAGE_UP·FIRE_RATE_UP·MOVE_SPEED_UP·HP_PLUS·PIERCE·MULTI_SHOT·BULLET_SPEED_UP·DASH_CD_DOWN) 중 1개를 다음 웨이브 업그레이드 3택 후보에서 제외한다 — 후보 풀은 8종에서 1종을 뺀 나머지이므로 3택은 항상 유지된다. 예산을 소모하지 않는다. 직전 웨이브와 동일 항목 금지 — 위반 시 NONE으로 강제 교체. 디렉터는 적만 조종하는 것이 아니라 플레이어의 성장 경로까지 설계에 넣는다. 단 어휘는 여전히 enum이고, 무엇을 얼마나 약화시킬지는 정하지 못한다.</td></tr>
   </table>
   <p>
     이 경계는 실측으로 확인했다. 장애 경로(네트워크 오류·타임아웃·스키마 위반)는 유닛 테스트 4건에
@@ -386,7 +389,7 @@
   <h2>2.4 규모</h2>
   <p>
     이 문서를 쓰는 시점(2026-08-06) 기준 실측치다. 제출 직전 최종 재산출 대상. 커밋 70여 개, TypeScript
-    27파일 3,303줄(src·tests 기준), 유닛 테스트 70개(7개 파일 전체 통과). 커밋 유형 분포: feat 16 ·
+    27파일 3,303줄(src·tests 기준), 유닛 테스트 82개(7개 파일 전체 통과). 커밋 유형 분포: feat 16 ·
     docs 14 · spec 11 · fix 11 · plan 9 · chore 4 · test 2. <code class="inline">plan</code> 커밋이 별도
     카테고리로 9건, <code class="inline">spec</code> 커밋이 11건 존재한다는 사실 자체가 이 파이프라인의
     증거다 — 코드를 고치기 전에 계획·스펙 문서를 고친 기록이 커밋 히스토리에 그대로 남아 있다.

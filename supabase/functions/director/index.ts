@@ -20,11 +20,12 @@ const DIRECTIVE_JSON_SCHEMA = {
       },
     },
     mutation: { type: 'string', enum: ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'LAVA_HOTSPOT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] },
-    buff: { type: 'string', enum: ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE'] },
+    buff: { type: 'string', enum: ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE', 'EVASIVE'] },
+    deny: { type: 'string', enum: ['NONE', 'DAMAGE_UP', 'FIRE_RATE_UP', 'MOVE_SPEED_UP', 'HP_PLUS', 'PIERCE', 'MULTI_SHOT', 'BULLET_SPEED_UP', 'DASH_CD_DOWN'] },
     taunt: { type: 'string' },
     intent: { type: 'string' },
   },
-  required: ['composition', 'mutation', 'buff', 'taunt', 'intent'],
+  required: ['composition', 'mutation', 'buff', 'deny', 'taunt', 'intent'],
   additionalProperties: false,
 } as const;
 
@@ -57,12 +58,17 @@ const SYSTEM = `너는 아케이드 게임의 'AI 디렉터'다. 플레이어의
     VOLATILE(splitter 분열 2->3기) — 분열형 처치가 많고 물량 처리가 능숙할 때
     INTERCEPT(추격형이 이동 방향 앞을 예측 요격) — 적을 뭉쳐서 한 번에 쓸어담을 때
     ENCIRCLE(추격형이 포위 반경으로 흩어져 조여듦) — 한 덩어리로 몰아두고 처리할 때
+    EVASIVE(전 적이 좌우로 흔들며 접근해 자동 조준탄을 흘림) — 가만히 서서 자동 사격으로 녹일 때
     NONE — 강화 없이 구성만으로 압박할 때
 - 해석 규칙: clusterRatio가 낮으면(0.3 미만) 적이 한 덩어리로 뭉쳐 있었다는 뜻이다 — 플레이어가 몰아서 쓸어담고 있다. INTERCEPT나 ENCIRCLE로 그 수렴을 깨라.
 - 해석 규칙: hotspotConcentration이 높으면(0.4 초과) 한 자리에 오래 버텼다는 뜻이다 — LAVA_HOTSPOT은 그 자리를 정확히 태운다.
 - 강화 카드는 비용이 든다: NONE이 아니면 예산의 25%가 차감되므로 적 수를 그만큼 줄여야 한다.
 - 직전 웨이브와 같은 카드는 고르지 마라.
-- intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.`;
+- intent에 그 카드를 고른 근거(플레이어의 어떤 강점을 노렸는지)를 써라.
+- deny는 다음 업그레이드 3택에서 뺄 항목이다. upgrades 로그에서 플레이어가 반복해서 고른 축을 읽고 그 성장을 막아라.
+  고를 수 있는 값: NONE, DAMAGE_UP, FIRE_RATE_UP, MOVE_SPEED_UP, HP_PLUS, PIERCE, MULTI_SHOT, BULLET_SPEED_UP, DASH_CD_DOWN.
+- deny는 예산을 쓰지 않는다. 직전 웨이브와 같은 것은 고르지 마라.
+- deny를 골랐다면 taunt가 그 사실을 지목해야 한다(예: "화력만 올리는군. 그 길은 막았다").`;
 
 Deno.serve(async (req) => {
   const cors = {
@@ -72,7 +78,7 @@ Deno.serve(async (req) => {
   };
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
   try {
-    const { mode, log, wave, budget, prevMutation, prevBuff, sessionId, runSummary, warmup } = await req.json();
+    const { mode, log, wave, budget, prevMutation, prevBuff, prevDeny, sessionId, runSummary, warmup } = await req.json();
     const used = sessionCounts.get(sessionId) ?? 0;
     // warmup(타이틀 사전 호출)은 세션 상한에 산입하지 않는다 — 단, 남용 방지를 위해 일일 캡 검사(overDailyCap)는
     // warmup도 동일하게 받는다(스펙 3.4 amendment). 세션 캡에 이미 걸린 실호출은 기존과 동일하게 일일 카운터를 소비하지 않는다.
@@ -96,7 +102,7 @@ Deno.serve(async (req) => {
       max_tokens: 500,
       system: SYSTEM,
       output_config: { format: { type: 'json_schema', schema: DIRECTIVE_JSON_SCHEMA } },
-      messages: [{ role: 'user', content: `웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}. 직전 buff: ${prevBuff}.\n플레이 로그:\n${JSON.stringify(log)}` }],
+      messages: [{ role: 'user', content: `웨이브 ${wave} 설계. 예산: ${budget}. 직전 mutation: ${prevMutation}. 직전 buff: ${prevBuff}. 직전 deny: ${prevDeny}.\n플레이 로그:\n${JSON.stringify(log)}` }],
     });
     const text = msg.content.find((b) => b.type === 'text')?.text ?? '{}';
     return new Response(JSON.stringify({ directive: JSON.parse(text) }), { headers: cors });
