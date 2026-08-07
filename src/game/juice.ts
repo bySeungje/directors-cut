@@ -49,8 +49,13 @@ export function killBurst(scene: Phaser.Scene, x: number, y: number, color: numb
   }
 }
 
-// ── 웨이브 클리어 슬로모 (브리프 명시: timeScale 0.4→1.0, 0.5초) ──────────
-const SLOWMO_FROM = 0.4;
+// ── 웨이브 클리어 슬로모 (브리프 의도: 0.4배속 → 정상, 0.5초) ─────────────
+/** ⚠ Arcade World의 timeScale은 **역수**다 — Phaser 공식 정의로 1=정상, 2=절반 속도, 0.5=2배 속도.
+ *  구현상 `msPerFrame = _frameTimeMS × timeScale`이고 `while (_elapsed >= msPerFrame) step()`이라,
+ *  timeScale이 작을수록 한 프레임에 물리 스텝이 더 많이 돈다(World.js:947, fixedStep 기본 true).
+ *  브리프의 "timeScale 0.4"를 그대로 넣으면 0.4배속이 아니라 **2.5배 가속**이 된다 — 초기 구현이
+ *  그 상태였고 웨이브 클리어마다 화면이 빨라졌다. 0.4배속을 얻으려면 역수인 2.5를 넣어야 한다. */
+const SLOWMO_FROM = 1 / 0.4; // = 2.5 → 0.4배속
 const SLOWMO_TO = 1.0;
 const SLOWMO_DURATION_MS = 500;
 
