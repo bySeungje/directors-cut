@@ -1,0 +1,6 @@
+{"transition_id":"sha256:7779ce21bf717056d6d15af0860821fe239a1b3f3c4d0a3e967638e00fe8ebf7","phase":"prepared","target_state":"deliberating","expected_revision":1,"ts":1786105692186}
+{"transition_id":"sha256:7779ce21bf717056d6d15af0860821fe239a1b3f3c4d0a3e967638e00fe8ebf7","phase":"committed","result":{"state":"deliberating","revision":2},"ts":1786105692186}
+{"transition_id":"sha256:9e32fd053a01deca9ff0f78d26e6d4381eed241f38d670af420191cd55709288","phase":"prepared","target_state":"awaiting_decision","expected_revision":2,"ts":1786105692420}
+{"transition_id":"sha256:9e32fd053a01deca9ff0f78d26e6d4381eed241f38d670af420191cd55709288","phase":"committed","result":{"state":"awaiting_decision","revision":3},"ts":1786105692420}
+{"transition_id":"sha256:55aaaaa97b872be9f196a6a351983f41edca8800a7a7cbbddc085db1549c5bc0","phase":"prepared","target_state":"cancelled","expected_revision":3,"ts":1786105721681}
+{"transition_id":"sha256:55aaaaa97b872be9f196a6a351983f41edca8800a7a7cbbddc085db1549c5bc0","phase":"committed","result":{"state":"cancelled","revision":4},"ts":1786105721681}
