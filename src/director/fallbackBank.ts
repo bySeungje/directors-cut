@@ -31,7 +31,7 @@ const BANK: Record<number, Directive[]> = {
   ],
   5: [
     { composition: [{ type: 'chaser', count: 18, spawn: 'RING', elite: false }, { type: 'splitter', count: 8, spawn: 'PINCER', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '끝없이 몰아친다. 버텨봐라.', intent: '지속 압박' },
-    { composition: [{ type: 'shooter', count: 4, spawn: 'RING', elite: true }, { type: 'chaser', count: 10, spawn: 'BEHIND', elite: false }], mutation: 'LAVA_RIGHT', buff: 'NONE', deny: 'NONE', taunt: '오른쪽을 지운다.', intent: '엘리트 사수 + 공간 압박' },
+    { composition: [{ type: 'shooter', count: 4, spawn: 'RING', elite: true }, { type: 'chaser', count: 10, spawn: 'BEHIND', elite: false }], mutation: 'LAVA_RIGHT', buff: 'NONE', deny: 'NONE', taunt: '오른쪽을 지운다.', intent: '엘리트 감시 드론 + 공간 압박' },
     { composition: [{ type: 'chaser', count: 20, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 7, spawn: 'N', elite: false }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '이 속도를 따라올 수 있나.', intent: '고속 혼전' },
   ],
   6: [
@@ -40,7 +40,7 @@ const BANK: Record<number, Directive[]> = {
     { composition: [{ type: 'chaser', count: 25, spawn: 'N', elite: false }, { type: 'chaser', count: 25, spawn: 'S', elite: false }, { type: 'chaser', count: 2, spawn: 'RING', elite: true }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '최정예다. 물러설 곳도 없다.', intent: '엘리트 물량' },
   ],
   7: [
-    { composition: [{ type: 'chaser', count: 30, spawn: 'RING', elite: false }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 12, spawn: 'PINCER', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '마지막 막이다. 전력을 다해라.', intent: '피날레: 총력전' },
+    { composition: [{ type: 'chaser', count: 30, spawn: 'RING', elite: false }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 12, spawn: 'PINCER', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '마지막 봉쇄다. 모든 시야를 열어라.', intent: '피날레: 전면 감시망' },
     { composition: [{ type: 'splitter', count: 21, spawn: 'PINCER', elite: false }, { type: 'splitter', count: 21, spawn: 'RING', elite: false }], mutation: 'LAVA_HOTSPOT', buff: 'NONE', deny: 'NONE', taunt: '네가 믿은 경로를 봉쇄한다.', intent: '피날레: 분열 폭풍' },
     { composition: [{ type: 'shooter', count: 4, spawn: 'RING', elite: true }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'chaser', count: 30, spawn: 'N', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '엔딩은 어둠 속에서.', intent: '피날레: 암전 총공세' },
   ],

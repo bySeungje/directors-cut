@@ -108,9 +108,9 @@ describe('pickFallbackTitle', () => {
     const s = buildRunSummary('WIN', [fakeWave({ movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 45, hotspotConcentration: 0 } })], []);
     expect(pickFallbackTitle(s)).toBe('회피 기동 전문');
   });
-  it('명중률 0.7 이상이면 "정밀 사수"', () => {
+  it('신호 적중률 0.7 이상이면 "정밀 교란자"', () => {
     const s = buildRunSummary('WIN', [fakeWave({ combat: { kills: {}, accuracy: 0.8, clusterRatio: 0 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 0, hotspotConcentration: 0 } })], []);
-    expect(pickFallbackTitle(s)).toBe('정밀 사수');
+    expect(pickFallbackTitle(s)).toBe('정밀 교란자');
   });
   it('아무 규칙도 안 맞으면 "생존자"', () => {
     const s = buildRunSummary('WIN', [fakeWave({ combat: { kills: {}, accuracy: 0.3, clusterRatio: 0 }, movement: { quadrantTime: { NW: 1, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0.1, dashCount: 0, hotspotConcentration: 0 } })], []);

@@ -40,9 +40,12 @@ const STAMP_HOLD_MS = 1300;
 const RULE_BANNER_MS = 1250;
 const SPOTLIGHT_HOLD_SEC = 8;
 const STAGE_DAMAGE_DPS = 0.85;
+const DETECTION_BUILD_PER_SEC = 0.56;
+const DETECTION_DECAY_PER_SEC = 0.38;
 const CAMERA_FRAME_MARGIN_X = 120;
 const CAMERA_FRAME_MARGIN_Y = 82;
 const PRIORITY_TARGET_COUNT = 3;
+const EXIT_ZONE_RADIUS = 26;
 
 type StageRule = 'NONE' | 'SEARCHLIGHT' | 'SURVEILLANCE_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_LOCKDOWN' | 'FINAL_CORE';
 
@@ -56,43 +59,43 @@ interface SectorStory {
 const SECTOR_STORIES: Record<number, SectorStory> = {
   1: {
     title: 'BLOCK 01 · 수감동 이탈',
-    objective: '기본 탈출 동선을 확보하고 첫 경비 로봇을 정리',
-    directorLine: '수감자 734, 탈출 시도 확인. 행동 패턴 기록을 시작한다.',
+    objective: '경비 시야를 피해 첫 보안문까지 이동',
+    directorLine: '수감자 734, 탈출 시도 확인. 시선 회피 패턴 기록을 시작한다.',
     rule: 'NONE',
   },
   2: {
     title: 'BLOCK 02 · 탐조등 구역',
-    objective: `탐조등 안에서 ${SPOTLIGHT_HOLD_SEC}초 누적 버티고 경비를 정리`,
-    directorLine: '어둠은 출구가 아니다. 빛 안에서 움직여라.',
+    objective: `탐조등 안에서 ${SPOTLIGHT_HOLD_SEC}초 신원 교란 후 출구로 이동`,
+    directorLine: '어둠 속 루트는 닫았다. 빛 안에서만 보안문이 열린다.',
     rule: 'SEARCHLIGHT',
   },
   3: {
     title: 'BLOCK 03 · 감시 프레임',
-    objective: '감시 프레임 밖으로 오래 벗어나지 않기',
+    objective: '감시 프레임 안에서 드론 시야를 피해 출구로 이동',
     directorLine: '시야 밖 탈출 루트는 폐쇄한다.',
     rule: 'SURVEILLANCE_FRAME',
   },
   4: {
     title: 'BLOCK 04 · 락다운 릴레이',
-    objective: '레드 타깃 락다운 유닛을 먼저 제거',
-    directorLine: '문을 열고 싶다면 릴레이부터 끊어라.',
+    objective: '락다운 릴레이의 붉은 감시망을 피해 보안문까지 이동',
+    directorLine: '문은 열어두겠다. 대신 모든 릴레이가 너를 본다.',
     rule: 'PRIORITY_TARGETS',
   },
   5: {
     title: 'BLOCK 05 · 루트 소각',
-    objective: 'DIRECTOR가 읽은 반복 동선을 피하며 생존',
+    objective: 'DIRECTOR가 읽은 반복 동선을 버리고 다른 길로 탈출',
     directorLine: '네가 반복한 경로를 전기 바닥으로 바꿨다.',
     rule: 'HOTSPOT_LOCKDOWN',
   },
   6: {
     title: 'BLOCK 06 · 압축 수용동',
-    objective: '좁아진 보안 구역에서 스폰 폭풍을 버티기',
+    objective: '좁아진 보안 구역에서 시야 틈을 찾아 출구로 이동',
     directorLine: '이동 가능 면적을 축소한다. 탈출 확률을 다시 계산한다.',
     rule: 'SURVEILLANCE_FRAME',
   },
   7: {
     title: 'CORE 07 · 중앙 통제실',
-    objective: '모든 보안 프로토콜을 버티고 중앙 통제실을 탈출',
+    objective: '중앙 감시망을 뚫고 마지막 출구로 이동',
     directorLine: '최종 봉쇄다. 네 탈출 기록은 여기서 끝난다.',
     rule: 'FINAL_CORE',
   },
@@ -170,6 +173,11 @@ export class ArenaScene extends Phaser.Scene {
   private cameraFrame: Phaser.Geom.Rectangle | null = null;
   private priorityTargets = new Set<Enemy>();
   private priorityRings!: Phaser.GameObjects.Graphics;
+  private visionGraphics!: Phaser.GameObjects.Graphics;
+  private detectionLevel = 0;
+  private exitZone: Phaser.Geom.Circle | null = null;
+  private exitReached = false;
+  private exitGraphics!: Phaser.GameObjects.Graphics;
 
   private waveText!: Phaser.GameObjects.Text;
   private storyText!: Phaser.GameObjects.Text;
@@ -194,6 +202,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: false });
     this.playerBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
     this.enemyBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
+    this.visionGraphics = this.add.graphics().setDepth(-8);
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
     this.player.onDash = () => {
@@ -231,6 +240,9 @@ export class ArenaScene extends Phaser.Scene {
     this.stageObjects = [];
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
+    this.detectionLevel = 0;
+    this.exitZone = null;
+    this.exitReached = false;
     this.cameraFrame = null;
     this.priorityTargets.clear();
 
@@ -278,6 +290,7 @@ export class ArenaScene extends Phaser.Scene {
       enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet);
     }
 
+    this.updateStealthSystems(dt);
     this.updateStageRule(dt);
     updateMutation(this, dt);
     if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
@@ -381,7 +394,7 @@ export class ArenaScene extends Phaser.Scene {
   private onEnemyDeath(enemy: Enemy) {
     this.telemetry.recordKill(enemy.enemyType);
     playKill();
-    if (this.priorityTargets.delete(enemy)) this.flashStageNote('TARGET CUT', '#ff2d2d');
+    if (this.priorityTargets.delete(enemy)) this.flashStageNote('RELAY JAMMED', '#6ee7ff');
 
     const wasSplit = enemy.canSplit;
     const x = enemy.x, y = enemy.y;
@@ -415,7 +428,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkWaveClear() {
     if (this.waveClearedEmitted || !this.enemiesSpawned || this.playerDead) return;
-    if (this.enemies.countActive(true) === 0 && this.stageObjectiveComplete()) {
+    const canEscape = this.exitReached || this.enemies.countActive(true) === 0;
+    if (canEscape && this.stageObjectiveComplete()) {
       this.waveClearedEmitted = true;
       console.log('[ArenaScene] wave-cleared', { wave: this.currentWave });
       this.events.emit('wave-cleared', this.currentWave);
@@ -448,6 +462,7 @@ export class ArenaScene extends Phaser.Scene {
     this.storyText.setText(story.title);
     this.objectiveText.setText(story.objective);
     this.showSceneCard(story);
+    this.setupExitZone();
 
     switch (this.stageRule) {
       case 'SEARCHLIGHT':
@@ -479,11 +494,42 @@ export class ArenaScene extends Phaser.Scene {
     this.stageRule = 'NONE';
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
+    this.exitZone = null;
+    this.exitReached = false;
+    this.visionGraphics?.clear();
   }
 
   private trackStageObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
     this.stageObjects.push(obj);
     return obj;
+  }
+
+  private setupExitZone() {
+    const margin = 74;
+    const slots = [
+      { x: this.scale.width - margin, y: this.scale.height - margin },
+      { x: this.scale.width - margin, y: margin },
+      { x: margin, y: this.scale.height - margin },
+      { x: this.scale.width / 2, y: margin },
+    ];
+    const p = slots[(this.currentWave - 1) % slots.length];
+    this.exitZone = new Phaser.Geom.Circle(p.x, p.y, EXIT_ZONE_RADIUS);
+    this.exitGraphics = this.trackStageObject(this.add.graphics().setDepth(-6));
+    this.drawExitZone();
+  }
+
+  private drawExitZone() {
+    if (!this.exitZone || !this.exitGraphics) return;
+    const pulse = 0.55 + Math.sin(this.time.now / 180) * 0.22;
+    this.exitGraphics.clear();
+    this.exitGraphics.fillStyle(0x6ee7ff, this.exitReached ? 0.18 : 0.09)
+      .fillCircle(this.exitZone.x, this.exitZone.y, EXIT_ZONE_RADIUS);
+    this.exitGraphics.lineStyle(2, this.exitReached ? 0xe8e8ec : 0x6ee7ff, this.exitReached ? 0.9 : pulse)
+      .strokeCircle(this.exitZone.x, this.exitZone.y, EXIT_ZONE_RADIUS);
+    this.exitGraphics.lineStyle(2, 0xe8e8ec, this.exitReached ? 0.8 : 0.42);
+    this.exitGraphics.lineBetween(this.exitZone.x - 12, this.exitZone.y, this.exitZone.x + 12, this.exitZone.y);
+    this.exitGraphics.lineBetween(this.exitZone.x + 6, this.exitZone.y - 7, this.exitZone.x + 14, this.exitZone.y);
+    this.exitGraphics.lineBetween(this.exitZone.x + 6, this.exitZone.y + 7, this.exitZone.x + 14, this.exitZone.y);
   }
 
   private showSceneCard(story: SectorStory) {
@@ -569,6 +615,76 @@ export class ArenaScene extends Phaser.Scene {
       case 'NONE':
         break;
     }
+  }
+
+  private updateStealthSystems(dt: number) {
+    this.drawExitZone();
+    if (this.exitZone && !this.exitReached && this.exitZone.contains(this.player.x, this.player.y)) {
+      this.exitReached = true;
+      this.detectionLevel = 0;
+      this.flashStageNote('EXIT ROUTE OPEN', '#6ee7ff');
+      this.checkWaveClear();
+    }
+
+    const seenBy = this.drawVisionCones();
+    if (seenBy) {
+      this.detectionLevel = Math.min(1.35, this.detectionLevel + DETECTION_BUILD_PER_SEC * dt);
+      if (this.detectionLevel >= 1) {
+        this.detectionLevel = 0.62;
+        const applied = this.applyDamageToPlayer();
+        if (applied) this.telemetry.recordDamage(seenBy.enemyType);
+      }
+    } else {
+      this.detectionLevel = Math.max(0, this.detectionLevel - DETECTION_DECAY_PER_SEC * dt);
+    }
+  }
+
+  private drawVisionCones(): Enemy | null {
+    this.visionGraphics.clear();
+    let spottedBy: Enemy | null = null;
+    const enemies = this.enemies.getChildren() as Enemy[];
+    for (const enemy of enemies) {
+      if (!enemy.active) continue;
+      const spec = this.visionSpec(enemy.enemyType);
+      const a = enemy.rotation;
+      const left = a - spec.fov / 2;
+      const right = a + spec.fov / 2;
+      const seen = this.playerInVision(enemy, spec.range, spec.fov);
+      if (seen) spottedBy = spottedBy ?? enemy;
+      const color = seen ? 0xff2d2d : spec.color;
+      const alpha = seen ? 0.23 : spec.alpha;
+      const x1 = enemy.x + Math.cos(left) * spec.range;
+      const y1 = enemy.y + Math.sin(left) * spec.range;
+      const x2 = enemy.x + Math.cos(right) * spec.range;
+      const y2 = enemy.y + Math.sin(right) * spec.range;
+      this.visionGraphics.fillStyle(color, alpha);
+      this.visionGraphics.fillTriangle(enemy.x, enemy.y, x1, y1, x2, y2);
+      this.visionGraphics.lineStyle(1, color, seen ? 0.72 : 0.28);
+      this.visionGraphics.lineBetween(enemy.x, enemy.y, x1, y1);
+      this.visionGraphics.lineBetween(enemy.x, enemy.y, x2, y2);
+    }
+    return spottedBy;
+  }
+
+  private visionSpec(type: EnemyType): { range: number; fov: number; color: number; alpha: number } {
+    switch (type) {
+      case 'shooter':
+        return { range: 250, fov: Phaser.Math.DegToRad(58), color: 0x6ee7ff, alpha: 0.11 };
+      case 'splitter':
+        return { range: 170, fov: Phaser.Math.DegToRad(86), color: 0xf59e0b, alpha: 0.09 };
+      case 'chaser':
+      default:
+        return { range: 160, fov: Phaser.Math.DegToRad(74), color: 0xe8e8ec, alpha: 0.075 };
+    }
+  }
+
+  private playerInVision(enemy: Enemy, range: number, fov: number): boolean {
+    const dx = this.player.x - enemy.x;
+    const dy = this.player.y - enemy.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > range) return false;
+    const angle = Math.atan2(dy, dx);
+    return Math.abs(Phaser.Math.Angle.Wrap(angle - enemy.rotation)) <= fov / 2;
   }
 
   private updateSpotlight(dt: number) {
@@ -941,18 +1057,20 @@ export class ArenaScene extends Phaser.Scene {
 
   private updateObjectiveText() {
     const story = this.sectorStory();
+    const exit = this.exitReached ? '출구 확보' : '출구로 이동';
+    const detection = this.detectionLevel > 0.02 ? ` · 발각 ${(this.detectionLevel * 100).toFixed(0)}%` : '';
     if (this.stageRule === 'SEARCHLIGHT') {
-      this.objectiveText.setText(`${story.objective}  ·  탐조등 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s`);
+      this.objectiveText.setText(`${story.objective}  ·  탐조등 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s  ·  ${exit}${detection}`);
       this.objectiveText.setColor(this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC ? '#e8e8ec' : '#9a9aa8');
       return;
     }
     if (this.stageRule === 'PRIORITY_TARGETS' || this.stageRule === 'FINAL_CORE') {
       const alive = [...this.priorityTargets].filter((e) => e.active).length;
-      this.objectiveText.setText(`${story.objective}  ·  타깃 ${alive}`);
+      this.objectiveText.setText(`${story.objective}  ·  감시 릴레이 ${alive}  ·  ${exit}${detection}`);
       this.objectiveText.setColor(alive === 0 ? '#e8e8ec' : '#ff2d2d');
       return;
     }
-    this.objectiveText.setText(story.objective);
+    this.objectiveText.setText(`${story.objective}  ·  ${exit}${detection}`);
     this.objectiveText.setColor('#7a7a88');
   }
 

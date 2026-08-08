@@ -30,7 +30,7 @@ export class TitleScene extends Phaser.Scene {
     this.renderDirectorBadge();
 
     this.add
-      .text(width / 2, height / 2 - 10, 'AI 감옥장이 탈출 습관을 학습해 다음 구역을 재설계하는 액션', {
+      .text(width / 2, height / 2 - 10, 'AI 감옥장이 은신 습관을 학습해 다음 감시망을 재설계하는 탈출 액션', {
         fontFamily: 'monospace', fontSize: '18px', color: '#ff2d2d',
       })
       .setOrigin(0.5);
@@ -40,7 +40,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 자동 EMP 무력화\n벽을 믿지 마라. 같은 탈출 루트를 반복하면 DIRECTOR가 다음 구역을 네 약점으로 바꾼다.', {
+      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 감시 시야 회피\n시야에 오래 들면 발각된다. 같은 탈출 루트를 반복하면 DIRECTOR가 다음 구역을 네 약점으로 바꾼다.', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
       })
       .setOrigin(0.5);

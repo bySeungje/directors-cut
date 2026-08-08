@@ -323,7 +323,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return 1 - Phaser.Math.Clamp(remaining / this.stats.dashCooldownMs, 0, 1);
   }
 
-  /** 이동·대시·조준·깜빡임 처리 후, 이번 프레임에 발사할 각도 목록(라디안)을 반환 */
+  /** 이동·대시·시선·깜빡임 처리 후, 긴급 교란 펄스 각도 목록(현재 기본 0발)을 반환 */
   update(time: number, _delta: number, enemies: Phaser.Physics.Arcade.Group): number[] {
     this.handleMovement(time);
     this.handleDash(time);
@@ -332,9 +332,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const nearest = findNearestActiveEnemy(this.x, this.y, enemies);
     if (nearest) this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, nearest.x, nearest.y));
 
+    // 탈출 게임의 중심은 교전이 아니라 감시 회피다. EMP 스탯/업그레이드는 긴급 교란용으로 남기되,
+    // 기본 루프에서는 자동 발사를 끄고 시야·출구 판단이 플레이의 전면에 오게 한다.
     if (!nearest || time - this.lastFireAt < this.stats.fireRateMs) return [];
-    this.lastFireAt = time;
-    return computeMultishotAngles(this.rotation, this.stats.multishot);
+    return [];
   }
 
   private handleMovement(time: number) {
@@ -501,6 +502,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     player: Player,
     fireEnemyBullet: (x: number, y: number, angle: number, sourceType: EnemyType) => void,
   ) {
+    void fireEnemyBullet;
     const dist = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
     const angleToPlayer = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
     const keep = buffedKeepDistance(SHOOTER_KEEP_DISTANCE);
@@ -518,10 +520,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
     this.setRotation(angleToPlayer);
 
-    if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) {
-      this.lastFireAt = time;
-      fireEnemyBullet(this.x, this.y, this.aimAngle(player, dist), 'shooter');
-    }
+    if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) this.lastFireAt = time;
   }
 
   /**

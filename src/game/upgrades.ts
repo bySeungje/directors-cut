@@ -21,13 +21,13 @@ const MAX_HP_CAP = 8;
 // 카드 desc 문구는 시안 v1 SCREEN 03(업그레이드 카드)의 문법을 따른다 — 수치보다 체감 문장(관통·연사 강화·대시 냉각 단축은 시안 원문과 동일).
 export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   DAMAGE_UP: {
-    name: 'EMP 증폭',
-    desc: '무력화 강도 +1',
+    name: '교란 증폭',
+    desc: '긴급 교란 강도 +1',
     apply: (s) => ({ ...s, damage: s.damage + 1 }),
   },
   FIRE_RATE_UP: {
-    name: '빠른 해킹',
-    desc: 'EMP 간격 15% 감소',
+    name: '빠른 교란',
+    desc: '긴급 교란 간격 15% 감소',
     apply: (s) => ({ ...s, fireRateMs: s.fireRateMs * 0.85 }),
   },
   MOVE_SPEED_UP: {
@@ -42,17 +42,17 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   PIERCE: {
     name: '연쇄 침투',
-    desc: 'EMP가 보안 유닛 1기를 더 관통',
+    desc: '교란 신호가 보안 유닛 1기를 더 관통',
     apply: (s) => ({ ...s, pierce: s.pierce + 1 }),
   },
   MULTI_SHOT: {
-    name: '분산 펄스',
-    desc: 'EMP가 부채꼴로 한 갈래 더 나간다',
+    name: '분산 교란',
+    desc: '교란 신호가 부채꼴로 한 갈래 더 나간다',
     apply: (s) => ({ ...s, multishot: s.multishot + 1 }),
   },
   BULLET_SPEED_UP: {
     name: '신호 가속',
-    desc: 'EMP 속도 +20%',
+    desc: '교란 신호 속도 +20%',
     apply: (s) => ({ ...s, bulletSpeed: s.bulletSpeed * 1.2 }),
   },
   DASH_CD_DOWN: {
