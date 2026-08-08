@@ -39,6 +39,8 @@
 | `C-phaser-time-now-unscaled` | `scene.time.now`는 timeScale 무관 — 배속을 걸면 밸런스가 깨진다 |
 | `C-arcade-timescale-inverse` | Arcade `world.timeScale`은 역수 — 0.4는 2.5배 가속 |
 | `C-budget-symmetric` | 엔진의 LLM 교정은 양방향으로. 거부는 최후 수단 |
+| **`C-player-needs-a-failure-axis`** | **난이도는 "플레이어가 못 하는 것"에서 나온다. 실패 축이 없으면 물량은 무의미** |
+| **`C-speed-ratio-decides-threat`** | **이속·탄속은 절대값이 아니라 플레이어 대비 비율이 위협을 결정한다** |
 
 ## 결정 (D) — 왜 이 방향인가
 
@@ -48,13 +50,24 @@
 | `D-settlement-in-arena` | 정산은 인터벌이 아니라 아레나 안 — 살아 있는 미터 + 처치 스탬프 |
 | `D-habits-five-to-three` | 습관 5종 → 3종. 임계는 계측 후 확정 |
 | `D-budget-overflow-trim` | 예산 초과는 거부가 아니라 축소 |
+| **`D-abandon-directors-cut`** | **게임플레이 개선 중단, 새 프로젝트로 전환 (2026-08-08 PM 결정)** |
 
 ## 근거 (S) — 원본이 어디 있나
 
 | 노드 | 실물 |
 |---|---|
 | `S-budget-curve-20260806` | `docs/verification/2026-08-06-budget-curve.md` |
-| `S-review-sim-20260808` | `docs/verification/2026-08-08-telemetry-traps.md` (⚠ 시뮬 스크립트는 휘발) |
+| `S-review-sim-20260808` | `docs/verification/2026-08-08-telemetry-traps.md` (시뮬은 `scripts/habit_sim.ts`로 재현 가능) |
+| `S-easy-postmortem-20260808` | `docs/verification/2026-08-08-why-it-stayed-easy.md` — **종료 기록** |
+
+## 이 프로젝트를 떠나는 사람이 읽을 것
+
+게임플레이 개선은 2026-08-08에 중단됐다(`D-abandon-directors-cut`). **왜 어렵게 만들 수 없었는지**가
+가장 가져갈 만한 지식이다 — `C-player-needs-a-failure-axis`와 `C-speed-ratio-decides-threat` 두 개,
+그리고 그 근거인 종료 기록.
+
+**살아남는 자산은 게임이 아니라 구조다:** 디렉터 아키텍처(어휘는 LLM·집행은 결정론), 예산·폴백
+이중 검증, 지표를 만들 때의 함정 10종, 그리고 이 허브 자체.
 
 ## 검증
 
