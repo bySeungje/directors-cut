@@ -1,2 +1,4 @@
 {"transition_id":"sha256:a182a516182fcf77ff8487dd7ab6ce138d7b353754530306d5528bc714e29777","phase":"prepared","target_state":"deliberating","expected_revision":1,"ts":1786155139642}
 {"transition_id":"sha256:a182a516182fcf77ff8487dd7ab6ce138d7b353754530306d5528bc714e29777","phase":"committed","result":{"state":"deliberating","revision":2},"ts":1786155139642}
+{"transition_id":"sha256:3df0d56e22f4a8d4ae4703462055f2648f73641cccf53735c948225270bd5fc8","phase":"prepared","target_state":"awaiting_decision","expected_revision":2,"ts":1786158968457}
+{"transition_id":"sha256:3df0d56e22f4a8d4ae4703462055f2648f73641cccf53735c948225270bd5fc8","phase":"committed","result":{"state":"awaiting_decision","revision":3},"ts":1786158968457}
