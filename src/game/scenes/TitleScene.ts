@@ -20,7 +20,7 @@ export class TitleScene extends Phaser.Scene {
     warmUpDirector(); // 프록시·모델 콜드스타트를 미리 데운다(전작 amendment 승계) — 게임 시작을 막지 않음
 
     const title = this.add
-      .text(width / 2, height / 2 - 80, '수읽기', { fontFamily: 'monospace', fontSize: '76px', color: '#e8e8ec', fontStyle: 'bold' })
+      .text(width / 2, height / 2 - 92, '증거편집실', { fontFamily: 'monospace', fontSize: '64px', color: '#e8e8ec', fontStyle: 'bold' })
       .setOrigin(0.5);
     // 타이틀을 비스듬히 긋는 레드 마크 — 전작 컷마크 문법 승계 (디렉터의 개입 표시)
     const x1 = title.x - title.width / 2 - 8;
@@ -29,15 +29,15 @@ export class TitleScene extends Phaser.Scene {
     this.add.graphics().lineStyle(5, RED_NUM, 1).lineBetween(x1, y, x2, y + (x2 - x1) * 0.05);
 
     this.add
-      .text(width / 2, height / 2 + 4, '나 vs 나를 읽는 AI', { fontFamily: 'monospace', fontSize: '18px', color: '#ff2d2d' })
+      .text(width / 2, height / 2 - 2, 'AI 수사관을 속이는 CCTV 편집 퍼즐', { fontFamily: 'monospace', fontSize: '18px', color: '#ff2d2d' })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 64, '클릭해서 시작', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec' })
+      .text(width / 2, height / 2 + 60, '클릭해서 편집 시작', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec' })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 104, 'AI 경비가 지키는 이중 금고 — 놈은 네 선택 패턴을 읽는다\n12라운드 안에 1,000을 털어서 걸어 나가라', {
+      .text(width / 2, height / 2 + 104, '금고 침입 사건 직후, 원본 CCTV 12개 중 5개만 법정에 제출된다\n컷 사이의 모순을 읽는 AI 수사관보다 먼저 그럴듯한 거짓말을 만들어라', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 6,
       })
       .setOrigin(0.5);
@@ -46,7 +46,7 @@ export class TitleScene extends Phaser.Scene {
 
     this.input.once('pointerdown', () => {
       resumeAudio(); // 브라우저 오토플레이 정책 — 최초 사용자 제스처에서 AudioContext를 깨운다
-      this.scene.start('VaultScene');
+      this.scene.start('CutroomScene');
     });
   }
 
