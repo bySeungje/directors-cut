@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateDirective, budgetFor, costOf, buffCostOf,
-  fillToBudgetFloor, BUDGET_FLOOR_RATIO,
+  fillToBudgetFloor, trimToBudgetCap, BUDGET_FLOOR_RATIO,
 } from '../src/director/validator';
 import { DirectiveSchema } from '../src/contracts/directive';
 
@@ -20,9 +20,14 @@ describe('validateDirective', () => {
   it('taunt 60자 초과 거부', () => {
     expect(validateDirective({ ...ok, taunt: '가'.repeat(61) }, 3, 'NONE', 'NONE', 'NONE')).toBeNull();
   });
-  it('예산 초과 거부: 웨이브3 상한을 넘는 엘리트 물량', () => {
+  // 2026-08-08 변경: 예산 초과는 거부가 아니라 축소다. 거부하면 폴백 뱅크로 떨어지는데 뱅크 대사는
+  // 습관을 지목하지 않는 고정 문자열이라, 심사자가 만나는 것이 '나를 읽는 디렉터'가 아니게 된다.
+  it('예산 초과는 거부가 아니라 축소된다 — LLM이 쓴 대사를 잃지 않기 위해', () => {
     const over = { ...ok, composition: [{ type: 'splitter', count: 30, spawn: 'RING', elite: true }] };
-    expect(validateDirective(over, 3, 'NONE', 'NONE', 'NONE')).toBeNull();
+    const v = validateDirective(over, 3, 'NONE', 'NONE', 'NONE');
+    expect(v).not.toBeNull();
+    expect(v!.taunt).toBe(ok.taunt);
+    expect(v!.composition.reduce((s, c) => s + costOf(c), 0)).toBeLessThanOrEqual(budgetFor(3));
   });
   it('동일 mutation 2연속이면 mutation을 NONE으로 강제 교체(거부 아님)', () => {
     const v = validateDirective(ok, 3, 'FOG', 'NONE', 'NONE');
@@ -45,6 +50,64 @@ describe('validateDirective', () => {
 
 // 하한이 없어 예산 90짜리 웨이브에 20을 써도 통과하던 결함(2026-08-07 발견). 8/6 밸런스 실측은
 // 예산을 꽉 채우는 폴백 뱅크 경로에서만 나왔고 LLM 경로에는 닿은 적이 없었다.
+// 천장을 거부로 두면 LLM을 천장 쪽으로 미는 프롬프트(2026-08-07 변경)와 맞물려 폴백 확률이 오른다.
+// 폴백은 습관을 지목하지 못하므로, 심사자가 가장 자주 만나는 디렉터가 가장 무성의한 버전이 된다.
+describe('예산 상한 (trimToBudgetCap)', () => {
+  const total = (c: ReturnType<typeof trimToBudgetCap>) => c.reduce((s, x) => s + costOf(x), 0);
+
+  it('상한 이하면 구성을 그대로 둔다', () => {
+    const fit = [{ type: 'chaser' as const, count: 5, spawn: 'N' as const, elite: false }];
+    expect(trimToBudgetCap(fit, 5, 'NONE')).toEqual(fit);
+  });
+
+  it('모든 웨이브에서 최대 구성을 상한 안으로 줄인다', () => {
+    const huge = [
+      { type: 'splitter' as const, count: 30, spawn: 'RING' as const, elite: true },
+      { type: 'shooter' as const, count: 30, spawn: 'N' as const, elite: true },
+      { type: 'chaser' as const, count: 30, spawn: 'S' as const, elite: true },
+      { type: 'chaser' as const, count: 30, spawn: 'W' as const, elite: false },
+    ];
+    for (let w = 1; w <= 7; w++) expect(total(trimToBudgetCap(huge, w, 'NONE'))).toBeLessThanOrEqual(budgetFor(w));
+  });
+
+  it('강화 카드 비용만큼 더 줄인다 — 카드를 쓰면 물량이 준다(§3.4.1-2)', () => {
+    // 웨이브 7 예산 90. 두 항목 합 120점이라 카드 유무 양쪽에서 실제로 축소가 일어난다.
+    const huge = [
+      { type: 'chaser' as const, count: 30, spawn: 'N' as const, elite: false },
+      { type: 'chaser' as const, count: 30, spawn: 'S' as const, elite: true },
+    ];
+    const withBuff = total(trimToBudgetCap(huge, 7, 'TOUGH'));
+    expect(withBuff + buffCostOf('TOUGH', 7)).toBeLessThanOrEqual(budgetFor(7));
+    expect(withBuff).toBeLessThan(total(trimToBudgetCap(huge, 7, 'NONE')));
+  });
+
+  it('항목을 최소 1개는 남기고 각 항목의 count도 최소 1이다(스키마 위반 방지)', () => {
+    const huge = [
+      { type: 'splitter' as const, count: 30, spawn: 'RING' as const, elite: true },
+      { type: 'shooter' as const, count: 30, spawn: 'N' as const, elite: true },
+    ];
+    const out = trimToBudgetCap(huge, 1, 'TOUGH');
+    expect(out.length).toBeGreaterThanOrEqual(1);
+    for (const c of out) expect(c.count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('축소 후에도 계약 스키마를 통과한다', () => {
+    const over = { ...ok, composition: [{ type: 'splitter', count: 30, spawn: 'RING', elite: true }, { type: 'chaser', count: 30, spawn: 'N', elite: true }] };
+    for (let w = 1; w <= 7; w++) {
+      const v = validateDirective(over, w, 'NONE', 'NONE', 'NONE');
+      expect(v).not.toBeNull();
+      expect(DirectiveSchema.safeParse(v).success).toBe(true);
+    }
+  });
+
+  it('어떤 초과 구성도 폴백으로 떨어뜨리지 않는다 — 대사가 살아남아야 한다', () => {
+    const over = { ...ok, taunt: '구석만 파는군.', composition: [{ type: 'splitter', count: 30, spawn: 'RING', elite: true }] };
+    for (let w = 1; w <= 7; w++) {
+      expect(validateDirective(over, w, 'NONE', 'NONE', 'NONE')?.taunt).toBe('구석만 파는군.');
+    }
+  });
+});
+
 describe('예산 하한 (fillToBudgetFloor)', () => {
   const floorOf = (w: number) => Math.floor(budgetFor(w) * BUDGET_FLOOR_RATIO);
   const total = (c: ReturnType<typeof fillToBudgetFloor>) => c.reduce((s, x) => s + costOf(x), 0);
@@ -97,10 +160,13 @@ describe('예산 하한 (fillToBudgetFloor)', () => {
     }
   });
 
-  it('이미 상한을 넘는 구성은 줄이지 않는다 — 천장 집행은 validateDirective의 몫', () => {
+  it('이미 상한을 넘는 구성은 증원하지 않는다 — 천장은 trimToBudgetCap의 몫', () => {
     const over = [{ type: 'chaser' as const, count: 30, spawn: 'N' as const, elite: false }];
     expect(fillToBudgetFloor(over, 1, 'NONE')).toEqual(over);
-    expect(validateDirective({ ...ok, composition: over }, 1, 'NONE', 'NONE', 'NONE')).toBeNull();
+    // validateDirective는 축소 → 증원 순으로 집행하므로 거부하지 않고 상한 안으로 들여놓는다.
+    const v = validateDirective({ ...ok, composition: over }, 1, 'NONE', 'NONE', 'NONE');
+    expect(v).not.toBeNull();
+    expect(v!.composition.reduce((s, c) => s + costOf(c), 0)).toBeLessThanOrEqual(budgetFor(1));
   });
 
   it('증원 결과가 스키마를 다시 통과한다 — 엔진이 만든 구성이 계약을 어기지 않아야 한다', () => {
@@ -143,12 +209,14 @@ describe('강화 카드', () => {
     expect(buffCostOf('TOUGH', 3)).toBe(Math.round(budgetFor(3) * 0.25));
     expect(buffCostOf('SWIFT', 7)).toBe(Math.round(budgetFor(7) * 0.25));
   });
-  it('buff 비용이 예산에 합산돼 초과분을 거부한다', () => {
+  it('buff 비용이 예산에 합산돼 초과분이 축소된다', () => {
     // 웨이브 3 예산 20, buff 비용 5 → composition 상한은 15
     const near = { ...ok, composition: [{ type: 'chaser', count: 16, spawn: 'N', elite: false }], buff: 'TOUGH' };
-    expect(validateDirective(near, 3, 'NONE', 'NONE', 'NONE')).toBeNull();
+    const v = validateDirective(near, 3, 'NONE', 'NONE', 'NONE');
+    expect(v).not.toBeNull();
+    expect(v!.composition.reduce((s, c) => s + costOf(c), 0)).toBeLessThanOrEqual(budgetFor(3) - buffCostOf('TOUGH', 3));
     const fits = { ...ok, composition: [{ type: 'chaser', count: 15, spawn: 'N', elite: false }], buff: 'TOUGH' };
-    expect(validateDirective(fits, 3, 'NONE', 'NONE', 'NONE')).not.toBeNull();
+    expect(validateDirective(fits, 3, 'NONE', 'NONE', 'NONE')!.composition[0].count).toBe(15);
   });
   it('buff 없이는 예산 전액을 composition에 쓸 수 있다', () => {
     const full = { ...ok, composition: [{ type: 'chaser', count: 20, spawn: 'N', elite: false }], buff: 'NONE' };

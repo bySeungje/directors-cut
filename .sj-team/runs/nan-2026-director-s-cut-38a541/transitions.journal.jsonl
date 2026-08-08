@@ -1,0 +1,2 @@
+{"transition_id":"sha256:a182a516182fcf77ff8487dd7ab6ce138d7b353754530306d5528bc714e29777","phase":"prepared","target_state":"deliberating","expected_revision":1,"ts":1786155139642}
+{"transition_id":"sha256:a182a516182fcf77ff8487dd7ab6ce138d7b353754530306d5528bc714e29777","phase":"committed","result":{"state":"deliberating","revision":2},"ts":1786155139642}

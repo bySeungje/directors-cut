@@ -77,6 +77,54 @@ export function fillToBudgetFloor(composition: Composition[], wave: number, buff
   }
 }
 
+/**
+ * 예산 상한 집행 — 초과분을 거부가 아니라 **축소**로 처리한다. `fillToBudgetFloor`의 거울.
+ *
+ * **왜 거부가 아니라 축소인가**: 초과를 거부하면 폴백 뱅크로 떨어지는데, 뱅크 대사는 습관을 지목하지
+ * 않는 고정 문자열("워밍업은 끝났다")이다. 심사자가 만나는 것이 '나를 읽는 디렉터'가 아니라 '대사 읽는
+ * NPC'가 된다 — 이 게임의 존재 이유가 사라지는 지점이다. 축소하면 예산 상한은 그대로 지켜지면서
+ * LLM이 쓴 taunt·intent·변주·강화·봉인이 전부 살아남는다. 안전성은 동일하고 디렉터의 존재감만 커진다.
+ *
+ * **왜 지금 필요해졌나**: 2026-08-07에 프롬프트를 "예산을 거의 다 써라(하한 80%·상한 100%)"로 바꿨다.
+ * 하한 미달을 막으려던 변경인데, LLM을 천장 쪽으로 밀어놓고 천장을 넘으면 버리는 구조가 되어
+ * 폴백 확률을 오히려 올렸다. 하한만 고치고 상한을 그대로 둔 것이 실수였다.
+ *
+ * ① 라운드로빈으로 1기씩 덜어 원래 구성 비율을 유지한다(항목당 최소 1기).
+ * ② 그래도 넘으면 단가가 가장 비싼 항목부터 통째로 뺀다(최소 1항목은 남긴다) — 개체 수가 위협을
+ *    만들므로 비싼 소수보다 싼 다수를 남기는 쪽이 디렉터의 의도에 가깝다.
+ */
+export function trimToBudgetCap(composition: Composition[], wave: number, buff: BuffCard): Composition[] {
+  const cap = budgetFor(wave) - buffCostOf(buff, wave);
+  const unitCostOf = (c: Composition) => ENEMY_COST[c.type] * (c.elite ? ELITE_MULT : 1);
+  let spent = composition.reduce((s, c) => s + costOf(c), 0);
+  if (spent <= cap) return composition;
+
+  const trimmed = composition.map((c) => ({ ...c }));
+
+  for (;;) {
+    let removed = false;
+    for (const c of trimmed) {
+      if (spent <= cap) break;
+      if (c.count <= 1) continue;
+      c.count--;
+      spent -= unitCostOf(c);
+      removed = true;
+    }
+    if (spent <= cap || !removed) break;
+  }
+
+  while (spent > cap && trimmed.length > 1) {
+    let worst = 0;
+    for (let i = 1; i < trimmed.length; i++) {
+      if (unitCostOf(trimmed[i]) > unitCostOf(trimmed[worst])) worst = i;
+    }
+    spent -= costOf(trimmed[worst]);
+    trimmed.splice(worst, 1);
+  }
+
+  return trimmed;
+}
+
 export function validateDirective(
   raw: unknown,
   wave: number,
@@ -87,14 +135,20 @@ export function validateDirective(
   const parsed = DirectiveSchema.safeParse(raw);
   if (!parsed.success) return null;
   const d = parsed.data;
-  const total = d.composition.reduce((s, c) => s + costOf(c), 0) + buffCostOf(d.buff, wave);
-  if (total > budgetFor(wave)) return null;
 
   const mutation: Mutation = d.mutation !== 'NONE' && d.mutation === prevMutation ? 'NONE' : d.mutation;
   const buff: BuffCard = d.buff !== 'NONE' && d.buff === prevBuff ? 'NONE' : d.buff;
   const deny: DenyTarget = d.deny !== 'NONE' && d.deny === prevDeny ? 'NONE' : d.deny;
-  // 하한 집행은 buff 강제 교체 뒤에 한다 — 교체로 buff가 NONE이 되면 그 비용(예산 25%)이 풀려
-  // 증원 가능한 여유가 달라지기 때문이다.
-  const composition = fillToBudgetFloor(d.composition, wave, buff);
+
+  // 예산 집행은 buff 강제 교체 **뒤에** 한다 — 교체로 buff가 NONE이 되면 그 비용(예산 25%)이 풀려
+  // 가용 여유가 달라진다. 상한 초과는 축소, 하한 미달은 증원 — 양쪽 다 엔진이 결정론으로 집행하고,
+  // 어느 쪽도 폴백으로 떨어뜨리지 않는다(LLM이 쓴 taunt를 잃지 않기 위해).
+  const composition = fillToBudgetFloor(trimToBudgetCap(d.composition, wave, buff), wave, buff);
+
+  // 방어적 확인 — 축소로도 상한을 못 맞추는 구성은 이론적으로 없지만(최소 구성 1항목 1기 = 최대 6점,
+  // 최소 예산 12), 계약이 바뀌어 전제가 깨지면 조용히 상한을 넘기느니 폴백이 낫다.
+  const total = composition.reduce((s, c) => s + costOf(c), 0) + buffCostOf(buff, wave);
+  if (total > budgetFor(wave)) return null;
+
   return { ...d, composition, mutation, buff, deny };
 }
