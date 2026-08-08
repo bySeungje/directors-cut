@@ -38,6 +38,65 @@ const LOSE_TRANSITION_DELAY_MS = 500;
 /** 정산 표시를 읽을 시간. 기존 waveClearSlowmo(500ms)보다 길게 잡아 슬로모가 끝난 뒤에도 잠시 남는다. */
 const STAMP_HOLD_MS = 1300;
 const RULE_BANNER_MS = 1250;
+const SPOTLIGHT_HOLD_SEC = 8;
+const STAGE_DAMAGE_DPS = 0.85;
+const CAMERA_FRAME_MARGIN_X = 120;
+const CAMERA_FRAME_MARGIN_Y = 82;
+const PRIORITY_TARGET_COUNT = 3;
+
+type StageRule = 'NONE' | 'SPOTLIGHT' | 'CAMERA_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_CONFESSION' | 'FINAL_BOSS';
+
+interface TakeStory {
+  title: string;
+  objective: string;
+  directorLine: string;
+  rule: StageRule;
+}
+
+const TAKE_STORIES: Record<number, TakeStory> = {
+  1: {
+    title: 'SCENE 01 · 침입 리허설',
+    objective: '기본 동선을 들키지 않고 첫 보안팀을 정리',
+    directorLine: '좋아. 아직은 네가 어떤 배우인지 보는 리허설이다.',
+    rule: 'NONE',
+  },
+  2: {
+    title: 'SCENE 02 · 조명 밖은 NG',
+    objective: `스포트라이트 안에서 ${SPOTLIGHT_HOLD_SEC}초 버티고 적을 정리`,
+    directorLine: '빛 안으로 들어와라. 관객은 도망치는 뒷모습을 좋아하지 않아.',
+    rule: 'SPOTLIGHT',
+  },
+  3: {
+    title: 'SCENE 03 · 카메라 프레임',
+    objective: '카메라 프레임 밖으로 오래 벗어나지 않기',
+    directorLine: '프레임 밖의 배우는 존재하지 않는다.',
+    rule: 'CAMERA_FRAME',
+  },
+  4: {
+    title: 'SCENE 04 · 주연 타깃',
+    objective: '레드 타깃 보안요원을 먼저 제거',
+    directorLine: '이번 컷의 주연은 네가 아니다. 저 타깃들을 먼저 지워라.',
+    rule: 'PRIORITY_TARGETS',
+  },
+  5: {
+    title: 'SCENE 05 · 동선 고백',
+    objective: 'AI가 읽은 습관 지대를 피하며 생존',
+    directorLine: '네가 사랑한 동선에 불을 붙였다. 이제 다른 연기를 해봐.',
+    rule: 'HOTSPOT_CONFESSION',
+  },
+  6: {
+    title: 'SCENE 06 · 원테이크 압박',
+    objective: '축소된 무대에서 스폰 폭풍을 버티기',
+    directorLine: '편집은 없다. 끊기면 그대로 끝이다.',
+    rule: 'CAMERA_FRAME',
+  },
+  7: {
+    title: 'FINAL CUT · 감독의 카메라',
+    objective: '모든 규칙을 버티고 최종 컷 완성',
+    directorLine: '마지막 장면이다. 네 습관으로 네 엔딩을 찍어주마.',
+    rule: 'FINAL_BOSS',
+  },
+};
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
 function isGodMode(): boolean {
@@ -102,8 +161,19 @@ export class ArenaScene extends Phaser.Scene {
   private predictionMeter!: Phaser.GameObjects.Graphics;
   /** 정산 표시 오브젝트 — 인터벌이 덮기 전에 걷어야 해서 참조를 들고 있는다. */
   private stampObjects: Phaser.GameObjects.GameObject[] = [];
+  private stageRule: StageRule = 'NONE';
+  private stageObjects: Phaser.GameObjects.GameObject[] = [];
+  private stageRuleDamageAcc = 0;
+  private spotlightHoldSec = 0;
+  private spotlight!: Phaser.GameObjects.Graphics;
+  private spotlightCenter = new Phaser.Math.Vector2();
+  private cameraFrame: Phaser.Geom.Rectangle | null = null;
+  private priorityTargets = new Set<Enemy>();
+  private priorityRings!: Phaser.GameObjects.Graphics;
 
   private waveText!: Phaser.GameObjects.Text;
+  private storyText!: Phaser.GameObjects.Text;
+  private objectiveText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
   private muteText!: Phaser.GameObjects.Text;
@@ -153,6 +223,12 @@ export class ArenaScene extends Phaser.Scene {
     this.prevHabit = null;
     this.score = { director: 0, player: 0 };
     this.brokePrediction = false;
+    this.stageRule = 'NONE';
+    this.stageObjects = [];
+    this.stageRuleDamageAcc = 0;
+    this.spotlightHoldSec = 0;
+    this.cameraFrame = null;
+    this.priorityTargets.clear();
 
     this.createHud();
     attachDirectorLog(this);
@@ -198,6 +274,7 @@ export class ArenaScene extends Phaser.Scene {
       enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet);
     }
 
+    this.updateStageRule(dt);
     updateMutation(this, dt);
     if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
 
@@ -300,6 +377,7 @@ export class ArenaScene extends Phaser.Scene {
   private onEnemyDeath(enemy: Enemy) {
     this.telemetry.recordKill(enemy.enemyType);
     playKill();
+    if (this.priorityTargets.delete(enemy)) this.flashStageNote('TARGET CUT', '#ff2d2d');
 
     const wasSplit = enemy.canSplit;
     const x = enemy.x, y = enemy.y;
@@ -333,7 +411,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkWaveClear() {
     if (this.waveClearedEmitted || !this.enemiesSpawned || this.playerDead) return;
-    if (this.enemies.countActive(true) === 0) {
+    if (this.enemies.countActive(true) === 0 && this.stageObjectiveComplete()) {
       this.waveClearedEmitted = true;
       console.log('[ArenaScene] wave-cleared', { wave: this.currentWave });
       this.events.emit('wave-cleared', this.currentWave);
@@ -349,7 +427,215 @@ export class ArenaScene extends Phaser.Scene {
     this.activeMutation = d.mutation;
     this.waveStartAt = this.time.now;
     runDirective(this, d);
+    this.setupStageRule();
     this.showRuleBanner(d);
+  }
+
+  private takeStory(): TakeStory {
+    return TAKE_STORIES[this.currentWave] ?? TAKE_STORIES[FINAL_WAVE];
+  }
+
+  private setupStageRule() {
+    this.clearStageRule();
+    const story = this.takeStory();
+    this.stageRule = story.rule;
+    this.stageRuleDamageAcc = 0;
+    this.spotlightHoldSec = 0;
+    this.storyText.setText(story.title);
+    this.objectiveText.setText(story.objective);
+    this.showSceneCard(story);
+
+    switch (this.stageRule) {
+      case 'SPOTLIGHT':
+        this.setupSpotlight();
+        break;
+      case 'CAMERA_FRAME':
+        this.setupCameraFrame(this.currentWave >= 6 ? 0.18 : 0);
+        break;
+      case 'PRIORITY_TARGETS':
+        this.setupPriorityTargets();
+        break;
+      case 'HOTSPOT_CONFESSION':
+        this.flashStageNote('DIRECTOR READS YOUR ROUTE', '#ff2d2d');
+        break;
+      case 'FINAL_BOSS':
+        this.setupCameraFrame(0.16);
+        this.setupPriorityTargets(true);
+        break;
+      case 'NONE':
+        break;
+    }
+  }
+
+  private clearStageRule() {
+    for (const o of this.stageObjects) o.destroy();
+    this.stageObjects = [];
+    this.priorityTargets.clear();
+    this.cameraFrame = null;
+    this.stageRule = 'NONE';
+    this.stageRuleDamageAcc = 0;
+    this.spotlightHoldSec = 0;
+  }
+
+  private trackStageObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
+    this.stageObjects.push(obj);
+    return obj;
+  }
+
+  private showSceneCard(story: TakeStory) {
+    const x = this.scale.width / 2;
+    const card = this.add.rectangle(x, 92, 700, 78, 0x0e0e15, 0.94)
+      .setStrokeStyle(1, 0x343440)
+      .setDepth(HUD_DEPTH + 35);
+    const title = this.add.text(x, 72, story.title, {
+      fontFamily: 'monospace', fontSize: '15px', color: '#e8e8ec', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 36);
+    const line = this.add.text(x, 98, `"${story.directorLine}"`, {
+      fontFamily: 'monospace', fontSize: '12px', color: '#9a9aa8',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 36);
+    this.tweens.add({
+      targets: [card, title, line],
+      alpha: 0,
+      delay: 1850,
+      duration: 280,
+      onComplete: () => {
+        card.destroy();
+        title.destroy();
+        line.destroy();
+      },
+    });
+  }
+
+  private setupSpotlight() {
+    this.spotlightCenter.set(this.scale.width / 2, this.scale.height / 2);
+    this.spotlight = this.trackStageObject(this.add.graphics().setDepth(-20));
+  }
+
+  private setupCameraFrame(shrinkRatio: number) {
+    const marginX = CAMERA_FRAME_MARGIN_X + this.scale.width * shrinkRatio;
+    const marginY = CAMERA_FRAME_MARGIN_Y + this.scale.height * shrinkRatio;
+    this.cameraFrame = new Phaser.Geom.Rectangle(
+      marginX, marginY,
+      this.scale.width - marginX * 2,
+      this.scale.height - marginY * 2,
+    );
+    const g = this.trackStageObject(this.add.graphics().setDepth(-15));
+    g.fillStyle(0x000000, 0.24);
+    g.fillRect(0, 0, this.scale.width, marginY);
+    g.fillRect(0, this.scale.height - marginY, this.scale.width, marginY);
+    g.fillRect(0, marginY, marginX, this.scale.height - marginY * 2);
+    g.fillRect(this.scale.width - marginX, marginY, marginX, this.scale.height - marginY * 2);
+    g.lineStyle(2, 0xe8e8ec, 0.42).strokeRect(
+      this.cameraFrame.x, this.cameraFrame.y, this.cameraFrame.width, this.cameraFrame.height,
+    );
+    g.lineStyle(2, 0xff2d2d, 0.75);
+    g.lineBetween(this.cameraFrame.x, this.cameraFrame.y, this.cameraFrame.x + 46, this.cameraFrame.y);
+    g.lineBetween(this.cameraFrame.right, this.cameraFrame.bottom, this.cameraFrame.right - 46, this.cameraFrame.bottom);
+  }
+
+  private setupPriorityTargets(forceElite = false) {
+    const enemies = (this.enemies.getChildren() as Enemy[]).filter((e) => e.active);
+    const sorted = enemies.sort((a, b) => {
+      const aScore = (a.elite ? 10 : 0) + (a.enemyType === 'shooter' ? 4 : a.enemyType === 'splitter' ? 2 : 0);
+      const bScore = (b.elite ? 10 : 0) + (b.enemyType === 'shooter' ? 4 : b.enemyType === 'splitter' ? 2 : 0);
+      return bScore - aScore;
+    });
+    const targets = sorted.slice(0, forceElite ? PRIORITY_TARGET_COUNT + 1 : PRIORITY_TARGET_COUNT);
+    for (const enemy of targets) {
+      this.priorityTargets.add(enemy);
+      enemy.setTint(ELITE_COLOR);
+    }
+    this.priorityRings = this.trackStageObject(this.add.graphics().setDepth(HUD_DEPTH - 3));
+  }
+
+  private updateStageRule(dt: number) {
+    switch (this.stageRule) {
+      case 'SPOTLIGHT':
+        this.updateSpotlight(dt);
+        break;
+      case 'CAMERA_FRAME':
+      case 'FINAL_BOSS':
+        this.tickCameraFrame(dt);
+        this.drawPriorityTargetRings();
+        break;
+      case 'PRIORITY_TARGETS':
+        this.drawPriorityTargetRings();
+        break;
+      case 'HOTSPOT_CONFESSION':
+      case 'NONE':
+        break;
+    }
+  }
+
+  private updateSpotlight(dt: number) {
+    const t = this.time.now / 1000;
+    const radius = 142;
+    const tx = this.scale.width / 2 + Math.cos(t * 0.58) * 190;
+    const ty = this.scale.height / 2 + Math.sin(t * 0.43) * 128;
+    this.spotlightCenter.lerp(new Phaser.Math.Vector2(tx, ty), 0.025);
+
+    const inside = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.spotlightCenter.x, this.spotlightCenter.y) <= radius;
+    if (inside) this.spotlightHoldSec = Math.min(SPOTLIGHT_HOLD_SEC, this.spotlightHoldSec + dt);
+    else this.tickStageDamage(dt);
+    if (this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC) this.checkWaveClear();
+
+    this.spotlight.clear();
+    this.spotlight.fillStyle(0xe8e8ec, 0.075).fillCircle(this.spotlightCenter.x, this.spotlightCenter.y, radius);
+    this.spotlight.lineStyle(2, inside ? 0xe8e8ec : 0xff2d2d, inside ? 0.55 : 0.9)
+      .strokeCircle(this.spotlightCenter.x, this.spotlightCenter.y, radius);
+    this.spotlight.lineStyle(1, 0xe8e8ec, 0.25)
+      .lineBetween(this.spotlightCenter.x - 18, this.spotlightCenter.y, this.spotlightCenter.x + 18, this.spotlightCenter.y)
+      .lineBetween(this.spotlightCenter.x, this.spotlightCenter.y - 18, this.spotlightCenter.x, this.spotlightCenter.y + 18);
+  }
+
+  private tickCameraFrame(dt: number) {
+    if (!this.cameraFrame) return;
+    const inside = this.cameraFrame.contains(this.player.x, this.player.y);
+    if (!inside) this.tickStageDamage(dt);
+    else this.stageRuleDamageAcc = 0;
+  }
+
+  private tickStageDamage(dt: number) {
+    this.stageRuleDamageAcc += STAGE_DAMAGE_DPS * dt;
+    while (this.stageRuleDamageAcc >= 1) {
+      this.stageRuleDamageAcc -= 1;
+      this.applyDamageToPlayer();
+    }
+  }
+
+  private drawPriorityTargetRings() {
+    if (!this.priorityRings) return;
+    this.priorityRings.clear();
+    this.priorityTargets.forEach((enemy) => {
+      if (!enemy.active) this.priorityTargets.delete(enemy);
+      else {
+        const pulse = 0.65 + Math.sin(this.time.now / 130) * 0.25;
+        this.priorityRings.lineStyle(2, 0xff2d2d, pulse)
+          .strokeCircle(enemy.x, enemy.y, Math.max(enemy.displayWidth, enemy.displayHeight) * 0.55 + 8);
+        this.priorityRings.lineStyle(1, 0xe8e8ec, 0.32)
+          .lineBetween(enemy.x - 18, enemy.y, enemy.x + 18, enemy.y)
+          .lineBetween(enemy.x, enemy.y - 18, enemy.x, enemy.y + 18);
+      }
+    });
+  }
+
+  private stageObjectiveComplete(): boolean {
+    if (this.stageRule === 'SPOTLIGHT') return this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC;
+    return true;
+  }
+
+  private flashStageNote(text: string, color: string) {
+    const note = this.add.text(this.scale.width / 2, this.scale.height / 2 + 116, text, {
+      fontFamily: 'monospace', fontSize: '16px', color, fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 50);
+    this.tweens.add({
+      targets: note,
+      alpha: 0,
+      y: note.y - 18,
+      delay: 420,
+      duration: 500,
+      onComplete: () => note.destroy(),
+    });
   }
 
   /** onWaveCleared·onPlayerDied가 공유하는 웨이브 로그 스냅샷. finish()가 반환하는 damageSources/combat.kills는
@@ -430,6 +716,7 @@ export class ArenaScene extends Phaser.Scene {
     if (this.prediction) this.prevHabit = this.prediction;
 
     this.prevMutation = this.activeMutation;
+    this.clearStageRule();
     clearMutation(this);
     waveClearSlowmo(this);
     playWaveClear();
@@ -498,6 +785,7 @@ export class ArenaScene extends Phaser.Scene {
     // waveClearedEmitted가 true인 경로(인터벌 대기 중 사망)에서는 onWaveCleared가 이미 호출했으므로
     // 여기서는 no-op(state가 이미 null) — 방어적 호출이라 중복 호출도 안전하다.
     clearMutation(this);
+    this.clearStageRule();
     console.log('[ArenaScene] LOSE');
     this.time.delayedCall(LOSE_TRANSITION_DELAY_MS, () => this.endRun('LOSE'));
   };
@@ -604,6 +892,12 @@ export class ArenaScene extends Phaser.Scene {
     this.waveText = this.add
       .text(16, 10, `TAKE ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec', fontStyle: 'bold' })
       .setDepth(HUD_DEPTH);
+    this.storyText = this.add
+      .text(16, 138, '', { fontFamily: 'monospace', fontSize: '12px', color: '#e8e8ec', fontStyle: 'bold' })
+      .setDepth(HUD_DEPTH);
+    this.objectiveText = this.add
+      .text(16, 156, '', { fontFamily: 'monospace', fontSize: '11px', color: '#7a7a88' })
+      .setDepth(HUD_DEPTH);
 
     this.dashGauge = this.add.graphics().setDepth(HUD_DEPTH);
     this.muteText = this.add
@@ -634,7 +928,25 @@ export class ArenaScene extends Phaser.Scene {
     this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
 
     this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
+    this.updateObjectiveText();
     this.updatePredictionMeter();
+  }
+
+  private updateObjectiveText() {
+    const story = this.takeStory();
+    if (this.stageRule === 'SPOTLIGHT') {
+      this.objectiveText.setText(`${story.objective}  ·  조명 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s`);
+      this.objectiveText.setColor(this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC ? '#e8e8ec' : '#9a9aa8');
+      return;
+    }
+    if (this.stageRule === 'PRIORITY_TARGETS' || this.stageRule === 'FINAL_BOSS') {
+      const alive = [...this.priorityTargets].filter((e) => e.active).length;
+      this.objectiveText.setText(`${story.objective}  ·  타깃 ${alive}`);
+      this.objectiveText.setColor(alive === 0 ? '#e8e8ec' : '#ff2d2d');
+      return;
+    }
+    this.objectiveText.setText(story.objective);
+    this.objectiveText.setColor('#7a7a88');
   }
 
   /** 걸린 예측과 그 지표를 실시간으로 그린다. 임계선을 넘으면 빨강(디렉터가 맞는 중), 아래면 흰색.

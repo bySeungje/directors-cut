@@ -22,15 +22,15 @@ export const BASE_STATS: PlayerStats = {
  * "따라잡혀서 아무것도 못 함"은 발생하지 않는다.
  */
 export const ENEMY_DEF: Record<EnemyType, { hp: number; speed: number; size: number }> = {
-  chaser:   { hp: 2, speed: 125, size: 14 },
-  shooter:  { hp: 3, speed: 60,  size: 15 },
-  splitter: { hp: 3, speed: 100, size: 16 },
+  chaser:   { hp: 2, speed: 145, size: 14 },
+  shooter:  { hp: 3, speed: 70,  size: 15 },
+  splitter: { hp: 3, speed: 115, size: 16 },
 };
 
 // 적탄 이동속도 — 브리프에 수치 없음. 플레이어 기본 탄속(480)보다 느리게 잡아 회피 가능하게 함(재량 결정).
 /** 적 탄속. 220은 플레이어 이속과 **정확히 같아서**, 선행 조준을 넣어도 방향만 바꾸면 무조건 빠졌다.
  *  320이면 선행이 의미를 갖되 급선회로는 여전히 흘릴 수 있다(2026-08-08 재설계). */
-export const ENEMY_BULLET_SPEED = 320;
+export const ENEMY_BULLET_SPEED = 360;
 
 /** shooter 선행 조준 상한(초). 행동 카드의 INTERCEPT와 같은 사고 — 멀수록 더 앞을 보되 과예측은 막는다. */
 const SHOOTER_LEAD_MAX_SEC = 0.9;
@@ -112,6 +112,10 @@ export function generateTextures(scene: Phaser.Scene) {
   g.clear();
   g.fillStyle(PLAYER_COLOR, 1);
   g.fillCircle(PLAYER_TEX_SIZE / 2, PLAYER_TEX_SIZE / 2, PLAYER_RADIUS);
+  g.lineStyle(2, 0x0a0a0f, 1);
+  g.strokeCircle(PLAYER_TEX_SIZE / 2, PLAYER_TEX_SIZE / 2, PLAYER_RADIUS - 2);
+  g.lineStyle(2, 0xe8e8ec, 0.9);
+  g.lineBetween(PLAYER_TEX_SIZE / 2 - 5, PLAYER_TEX_SIZE / 2 - 10, PLAYER_TEX_SIZE / 2 + 5, PLAYER_TEX_SIZE / 2 - 10);
   g.fillTriangle(
     PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS + 7, PLAYER_TEX_SIZE / 2,
     PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS - 2, PLAYER_TEX_SIZE / 2 - 6,
@@ -126,24 +130,45 @@ export function generateTextures(scene: Phaser.Scene) {
     const s = ENEMY_DEF.chaser.size;
     const c = ENEMY_TEX_SIZE.chaser / 2;
     g.fillTriangle(c + s, c, c - s * 0.7, c - s * 0.85, c - s * 0.7, c + s * 0.85);
+    g.fillStyle(0x0a0a0f, 1);
+    g.fillTriangle(c + s * 0.35, c, c - s * 0.08, c - s * 0.28, c - s * 0.08, c + s * 0.28);
+    g.lineStyle(2, 0x9a9aa8, 0.75);
+    g.lineBetween(c - s * 0.56, c - s * 0.55, c - s * 0.92, c - s * 0.9);
+    g.lineBetween(c - s * 0.56, c + s * 0.55, c - s * 0.92, c + s * 0.9);
   }
   g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
 
-  // shooter: 사각 + 작은 조준 노치(발사 방향을 읽을 수 있게 — 재량 결정)
+  // shooter: 감시 카메라 드론. 사각형만 있으면 UI 도형처럼 보여 렌즈와 배럴을 더한다.
   g.clear();
   g.fillStyle(ENEMY_COLOR, 1);
   {
     const s = ENEMY_DEF.shooter.size;
     const c = ENEMY_TEX_SIZE.shooter / 2;
-    g.fillRect(c - s, c - s, s * 2, s * 2);
+    g.fillRoundedRect(c - s, c - s, s * 2, s * 2, 4);
+    g.fillStyle(0x0a0a0f, 1);
+    g.fillCircle(c, c, s * 0.48);
+    g.fillStyle(0x9a9aa8, 1);
+    g.fillCircle(c, c, s * 0.23);
     g.fillTriangle(c + s + 6, c, c + s - 2, c - 5, c + s - 2, c + 5);
+    g.lineStyle(2, 0x0a0a0f, 0.9);
+    g.strokeRect(c - s + 3, c - s + 3, s * 2 - 6, s * 2 - 6);
   }
   g.generateTexture(ENEMY_TEX.shooter, ENEMY_TEX_SIZE.shooter, ENEMY_TEX_SIZE.shooter);
 
-  // splitter: 육각
+  // splitter: 분열 보안 드론. 내부 절개선을 넣어 "죽으면 갈라진다"는 힌트를 준다.
   g.clear();
   g.fillStyle(ENEMY_COLOR, 1);
-  drawHexagon(g, ENEMY_TEX_SIZE.splitter / 2, ENEMY_TEX_SIZE.splitter / 2, ENEMY_DEF.splitter.size);
+  {
+    const c = ENEMY_TEX_SIZE.splitter / 2;
+    const s = ENEMY_DEF.splitter.size;
+    drawHexagon(g, c, c, s);
+    g.lineStyle(2, 0x0a0a0f, 0.9);
+    g.lineBetween(c, c - s * 0.85, c, c + s * 0.85);
+    g.lineBetween(c - s * 0.7, c - s * 0.42, c + s * 0.7, c + s * 0.42);
+    g.lineBetween(c - s * 0.7, c + s * 0.42, c + s * 0.7, c - s * 0.42);
+    g.fillStyle(0xe8e8ec, 0.85);
+    g.fillCircle(c, c, 3);
+  }
   g.generateTexture(ENEMY_TEX.splitter, ENEMY_TEX_SIZE.splitter, ENEMY_TEX_SIZE.splitter);
 
   // 플레이어 탄

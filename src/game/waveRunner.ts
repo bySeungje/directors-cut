@@ -7,7 +7,7 @@ import { setActiveBuff } from './buffs';
 const SPAWN_MARGIN = 40; // 화면 밖 40px에서 진입
 const RING_RADIUS = 320; // RING: 플레이어 중심 반경 320px
 const STORM_BATCH_COUNT = 3; // SPAWN_STORM: composition을 3분할
-const STORM_INTERVAL_MS = 4000; // 4초 간격 순차 스폰
+const STORM_INTERVAL_MS = 2600; // TAKE 중간 압박이 느슨하지 않도록 순차 스폰 간격을 줄인다.
 
 type Edge = 'N' | 'S' | 'E' | 'W';
 const OPPOSITE_EDGE: Record<Edge, Edge> = { N: 'S', S: 'N', E: 'W', W: 'E' };
