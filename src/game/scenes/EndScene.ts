@@ -6,6 +6,9 @@ export interface EndSceneData {
   result: 'WIN' | 'LOSE';
   waveLogs: WaveLog[];
   upgrades: string[];
+  /** 예측 판정 누계(디렉터 : 당신). 승패와는 별개 축이다 — 지면서 이길 수 있다.
+   *  선택 필드로 둔다: 이 씬을 직접 띄우는 개발 경로가 있고, 없으면 스코어 줄만 생략된다. */
+  verdictScore?: { director: number; player: number };
 }
 
 // ── 색상 (시안 v1 CSS 변수 그대로: --board·--line·--red·--ink·--dim·--faint) ──
@@ -58,6 +61,8 @@ const DEPTH_UI = 100;
 
 export class EndScene extends Phaser.Scene {
   private boxGraphics?: Phaser.GameObjects.Graphics;
+  /** create()가 받은 데이터 — 통계 줄 렌더가 참조한다. 매 create()에서 덮어쓴다(리스타트 안전). */
+  private sceneData?: EndSceneData;
 
   constructor() {
     super('EndScene');
@@ -66,6 +71,7 @@ export class EndScene extends Phaser.Scene {
   create(data: EndSceneData) {
     const { width } = this.scale;
     const result = data.result;
+    this.sceneData = data;
     // EndScene이 조립 — 통계 한 줄 표시와 requestReport 입력이 동일 집계(buildRunSummary)를 공유한다.
     const summary = buildRunSummary(result, data.waveLogs, data.upgrades);
 
@@ -208,6 +214,18 @@ export class EndScene extends Phaser.Scene {
       )
       .setOrigin(0.5)
       .setDepth(DEPTH_UI);
+
+    // 읽기 대결 누계 — 승패와 별개 축이라 별도 줄로 둔다("지면서 이겼다"가 성립한다).
+    const s = this.sceneData?.verdictScore;
+    if (s && s.director + s.player > 0) {
+      this.add
+        .text(width / 2, STAT_Y + 24, `읽기 대결  디렉터 ${s.director}  :  당신 ${s.player}`, {
+          fontFamily: 'monospace', fontSize: '15px',
+          color: s.player > s.director ? INK_HEX : RED_HEX,
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_UI);
+    }
   }
 
   /** 리포트 박스 chrome(배경·D뱃지·라벨·본문 텍스트 오브젝트)을 만들고 참조를 돌려준다.

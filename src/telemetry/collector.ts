@@ -85,6 +85,9 @@ export class WaveTelemetry {
   recordDamage(t: EnemyType) { this.damage[t] = (this.damage[t] ?? 0) + 1; }
   recordDash() { this.dashes++; }
 
+  /** 전투 중 미터가 대시 **비율**을 그리려면 진행 중 카운트가 필요하다(카운트 자체는 판정에 쓰지 않는다). */
+  dashCount(): number { return this.dashes; }
+
   /** 창 기준 현재 습관 지표. 전투 중 미터와 웨이브 종료 판정이 이 하나를 공유한다 —
    *  화면에 보이는 값과 채점되는 값이 다르면 플레이어가 반증할 방법이 없다. */
   peek(): HabitSample {

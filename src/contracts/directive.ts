@@ -11,6 +11,12 @@ export const DENY_TARGETS = [
   'PIERCE', 'MULTI_SHOT', 'BULLET_SPEED_UP', 'DASH_CD_DOWN',
 ] as const;
 
+/** 플레이어 습관 어휘. `WaveLog`를 타고 프롬프트에 실리므로 계약이 소유한다 —
+ *  단 `DirectiveSchema`/`DIRECTIVE_JSON_SCHEMA`(LLM 출력)에는 들어가지 않으므로
+ *  프록시 수동 사본과 무관하다. 판정 규칙은 `src/game/habits.ts`. */
+export const HABIT_IDS = ['ANCHOR', 'CORNER', 'DASH'] as const;
+export type HabitId = (typeof HABIT_IDS)[number];
+
 export type EnemyType = (typeof ENEMY_TYPES)[number];
 export type SpawnPattern = (typeof SPAWN_PATTERNS)[number];
 export type Mutation = (typeof MUTATIONS)[number];
@@ -45,6 +51,11 @@ export interface WaveLog {
   combat: { kills: Partial<Record<EnemyType, number>>; accuracy: number; clusterRatio: number };
   upgrades: string[];
   prevMutations: Mutation[];
+  /** 이 웨이브에서 관측된 지배적 습관. **선택 필드다** — `client.ts`의 `WARMUP_LOG`와 테스트 픽스처가
+   *  `WaveLog` 객체 리터럴을 직접 만들고 있어 필수로 두면 타입체크가 깨진다.
+   *  채우는 곳은 `ArenaScene.snapshotCurrentWaveLog`이지 `collector.finish()`가 아니다 —
+   *  finish() 반환 뒤에 hpLost가 보정되므로 수집기는 최종 로그를 보지 못한다. */
+  dominantHabit?: HabitId | null;
 }
 
 export const ENEMY_COST: Record<EnemyType, number> = { chaser: 1, shooter: 2, splitter: 2 };

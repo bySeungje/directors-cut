@@ -1,7 +1,11 @@
 import Phaser from 'phaser';
-import { Directive, EnemyType, Mutation, BuffCard, DenyTarget, WaveLog } from '../../contracts/directive';
+import { Directive, EnemyType, Mutation, BuffCard, DenyTarget, WaveLog, HabitId } from '../../contracts/directive';
 import { OPENING_WAVE } from '../../director/fallbackBank';
-import { WaveTelemetry } from '../../telemetry/collector';
+import { WaveTelemetry, type HabitSample } from '../../telemetry/collector';
+import {
+  HABITS, detectHabit, judge, meterFill, VOID_REASON,
+  type HabitReading, type Verdict,
+} from '../habits';
 import {
   Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures,
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
@@ -31,6 +35,8 @@ const FINAL_WAVE = 7;
 // LOSE는 마지막 피격의 흔들림·사운드가 등록될 시간을 준다.
 const WIN_TRANSITION_DELAY_MS = 600;
 const LOSE_TRANSITION_DELAY_MS = 500;
+/** 정산 표시를 읽을 시간. 기존 waveClearSlowmo(500ms)보다 길게 잡아 슬로모가 끝난 뒤에도 잠시 남는다. */
+const STAMP_HOLD_MS = 1300;
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
 function isGodMode(): boolean {
@@ -82,6 +88,20 @@ export class ArenaScene extends Phaser.Scene {
    *  실제 피격 발생 횟수를 별도로 세어 WaveLog.hpLost를 보정한다. */
   private hpLostThisWave = 0;
 
+  // ── 예측·판정 (amendment #5) — 모듈 전역이 아니라 씬 필드다. 리스타트에서 create()가 전부 초기화한다.
+  /** 이번 웨이브에 걸린 예측. 웨이브 1은 관찰 라운드라 null. */
+  private prediction: HabitId | null = null;
+  /** 직전 라운드에 건 습관 — 같은 것을 연속으로 지목하지 않기 위해. */
+  private prevHabit: HabitId | null = null;
+  /** 디렉터 : 당신 */
+  private score = { director: 0, player: 0 };
+  /** 직전 판정이 BROKEN이면 그 라운드 디렉터의 봉인이 무효가 된다(인터벌이 읽는다). */
+  brokePrediction = false;
+  private predictionText!: Phaser.GameObjects.Text;
+  private predictionMeter!: Phaser.GameObjects.Graphics;
+  /** 정산 표시 오브젝트 — 인터벌이 덮기 전에 걷어야 해서 참조를 들고 있는다. */
+  private stampObjects: Phaser.GameObjects.GameObject[] = [];
+
   private waveText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
@@ -126,6 +146,11 @@ export class ArenaScene extends Phaser.Scene {
     // (beginWave에서 교체하면 인터벌 창의 잔여 피해가 이미 push된 이전 로그를 오염시킨다. F1 fix 참고)
     this.telemetry = new WaveTelemetry();
     this.hpLostThisWave = 0;
+    this.stampObjects = [];
+    this.prediction = null;
+    this.prevHabit = null;
+    this.score = { director: 0, player: 0 };
+    this.brokePrediction = false;
 
     this.createHud();
     attachDirectorLog(this);
@@ -327,6 +352,21 @@ export class ArenaScene extends Phaser.Scene {
   /** onWaveCleared·onPlayerDied가 공유하는 웨이브 로그 스냅샷. finish()가 반환하는 damageSources/combat.kills는
    *  WaveTelemetry 내부 객체의 라이브 참조라 얕은 복사로 분리해둔다(값이 전부 원시 number라 얕은 복사=완전한
    *  분리) — 그렇지 않으면 인터벌 중 recordDamage/recordKill이 이미 push된 이 로그를 사후 변조한다. */
+  /** 현재 습관 지표 — 전투 중 미터와 웨이브 종료 판정이 **이 하나**를 공유한다.
+   *  화면에 보이는 값과 채점되는 값이 다르면 플레이어가 예측을 반증할 방법이 없다. */
+  private currentReading(): HabitReading {
+    const s: HabitSample = this.telemetry.peek();
+    const elapsed = Math.max((this.time.now - this.waveStartAt) / 1000, 0.001);
+    // 가동률 = 실제 대시 빈도 ÷ 자기 쿨다운이 허용하는 최대 빈도. 쿨다운이 업그레이드로 줄어도
+    // 같은 습관이 같은 수치로 나온다(DASH_CD_DOWN 3회면 최대치가 0.5→0.98/s로 두 배가 된다).
+    const maxRate = 1000 / this.player.stats.dashCooldownMs;
+    return {
+      corner: s.corner,
+      anchor: s.anchor,
+      dashUptime: Math.min(1, this.telemetry.dashCount() / elapsed / maxRate),
+    };
+  }
+
   private snapshotCurrentWaveLog(wave: number): WaveLog {
     const clearTimeSec = (this.time.now - this.waveStartAt) / 1000;
     this.mutationHistory.push(this.activeMutation);
@@ -337,12 +377,55 @@ export class ArenaScene extends Phaser.Scene {
     log.damageSources = { ...log.damageSources };
     log.combat = { ...log.combat, kills: { ...log.combat.kills } };
     log.hpLost = this.hpLostThisWave; // damageSources 합산 대신 실제 피격 횟수(mutation 피해 포함)로 보정
+
+    // dominantHabit은 여기서 채운다 — collector.finish() 안이 아니다. 위 hpLost 보정이 finish() 반환
+    // 뒤에 일어나므로 수집기는 최종 로그를 보지 못한다. 프롬프트가 도발에서 같은 습관을 지목하게 하는 용도.
+    const reading = this.currentReading();
+    log.dominantHabit = detectHabit(reading, this.prevHabit);
+    this.logHabitMetrics(wave, reading, log.dominantHabit);
     return log;
+  }
+
+  /** 계측 훅 — 임계값을 눈으로 튜닝할 수 없어서 만든다. 실제 런의 분포를 보고 임계를 정한다.
+   *  본문 전체를 DEV 가드로 감싼다(호출부만 가드하면 esbuild가 메서드 본문을 지우지 않는다 — 기존 F1 패턴). */
+  private logHabitMetrics(wave: number, r: HabitReading, picked: HabitId | null) {
+    if (!import.meta.env.DEV) return;
+    const rows = (Object.keys(HABITS) as HabitId[]).map((id) => ({
+      습관: id,
+      값: HABITS[id].read(r).toFixed(3),
+      임계: HABITS[id].threshold,
+      초과율: (HABITS[id].read(r) / HABITS[id].threshold).toFixed(2),
+      넘김: HABITS[id].read(r) >= HABITS[id].threshold ? 'O' : '',
+    }));
+    console.log(`[habits] 웨이브 ${wave} · 선택=${picked ?? '없음'} · 변주=${this.activeMutation}`);
+    console.table(rows);
+  }
+
+  /** 걸려 있던 예측을 채점하고 스코어를 갱신한다. 판정된 습관을 반환(없으면 null). */
+  private resolvePrediction(reading: HabitReading): { habit: HabitId; verdict: Verdict } | null {
+    const habit = this.prediction;
+    if (habit === null) return null;
+    const verdict = judge(habit, reading, this.activeMutation);
+    if (verdict === 'HIT') this.score.director++;
+    else if (verdict === 'BROKEN') this.score.player++;
+    this.brokePrediction = verdict === 'BROKEN';
+    this.prediction = null;
+    return { habit, verdict };
   }
 
   private onWaveCleared = (wave: number) => {
     const log = this.snapshotCurrentWaveLog(wave);
     this.waveLogs.push(log);
+
+    // 판정은 텔레메트리 교체 **전에** 한다(아래에서 교체된다). 웨이브 7도 여기를 지나므로
+    // 마지막 예측이 미판정으로 남지 않는다 — 아래 FINAL_WAVE 조기 반환보다 앞이다.
+    const reading = this.currentReading();
+    const resolved = this.resolvePrediction(reading);
+    if (resolved) this.stampVerdict(resolved.habit, resolved.verdict, reading);
+    // 다음 웨이브에 걸 예측 = 이번 웨이브의 지배 습관
+    this.prediction = log.dominantHabit ?? null;
+    if (this.prediction) this.prevHabit = this.prediction;
+
     this.prevMutation = this.activeMutation;
     clearMutation(this);
     waveClearSlowmo(this);
@@ -367,8 +450,16 @@ export class ArenaScene extends Phaser.Scene {
     // currentWave는 카드 선택 완료(onDone) 시점까지 갱신하지 않는다 — 그래야 인터벌 내내 좌상단 HUD와
     // 인터벌 패널의 "웨이브 N 클리어" 헤더가 같은(방금 끝난) 웨이브 번호를 가리켜 서로 어긋나지 않는다.
     const nextWave = wave + 1;
-    requestDirective(log, nextWave, this.prevMutation, this.prevBuff, this.prevDeny).then(({ directive, fromLLM }) => {
+    // 정산이 읽힐 시간을 확보한다. 폴백 경로에서는 requestDirective가 즉시 resolve돼 인터벌 오버레이가
+    // 스탬프를 바로 덮는데, 하필 폴백은 심사자가 가장 자주 만나는 경로다. 판정이 이 개정의 핵심이므로
+    // 디렉티브와 이 유예를 함께 기다린다(LLM 경로에서는 응답 대기가 이미 이 시간을 넘겨 추가 지연이 0).
+    const stampHold = new Promise<void>((res) => this.time.delayedCall(STAMP_HOLD_MS, res));
+    Promise.all([
+      requestDirective(log, nextWave, this.prevMutation, this.prevBuff, this.prevDeny),
+      stampHold,
+    ]).then(([{ directive, fromLLM }]) => {
       if (this.playerDead) return; // 인터벌 대기 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
+      this.clearStamp(); // 인터벌 오버레이와 겹치지 않게 걷는다
       this.lastDirectiveFromLLM = fromLLM;
       this.lastDirective = directive;
       // directive.buff는 검증을 거친 최종값이라 다음 웨이브가 실제로 실행할 buff와 동일하다 — 그 웨이브가
@@ -396,6 +487,8 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.waveClearedEmitted) {
       const log = this.snapshotCurrentWaveLog(this.currentWave);
       this.waveLogs.push(log);
+      // 사망 경로에도 인터벌이 없어 걸려 있던 예측이 미판정으로 남는다 — 여기서 채점한다.
+      this.resolvePrediction(this.currentReading());
       this.prevMutation = this.activeMutation;
     }
     // onWaveCleared와 대칭: 사망 시점에도 활성 mutation의 시각 리소스(그래픽스·RenderTexture)를 정리한다.
@@ -413,6 +506,7 @@ export class ArenaScene extends Phaser.Scene {
       result,
       waveLogs: [...this.waveLogs],
       upgrades: [...this.chosenUpgrades],
+      verdictScore: { ...this.score },
     });
   }
 
@@ -434,6 +528,44 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  /** 정산 순간 — 마지막 적이 죽는 그 자리에서 찍는다. 인터벌 성적표가 아닌 이유는
+   *  원인과의 시차다: 인터벌은 40초 뒤라 성적표가 되고, 여기는 0초라 정산이 된다.
+   *  기존 waveClearSlowmo(0.5초) 위에 얹혀 슬로모가 그대로 연출이 된다. */
+  private stampVerdict(habit: HabitId, verdict: Verdict, r: HabitReading) {
+    const def = HABITS[habit];
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2 - 30;
+    const hit = verdict === 'HIT';
+    const word = hit ? '적중' : verdict === 'BROKEN' ? '빗나감' : '무효';
+    const color = hit ? '#ff2d2d' : verdict === 'BROKEN' ? '#e8e8ec' : '#7a7a88';
+    const detail = verdict === 'VOID' ? VOID_REASON : def.evidence(r);
+
+    this.clearStamp();
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => { objs.push(o); return o; };
+
+    add(this.add.text(cx, cy - 34, `"${def.claim}"`, {
+      fontFamily: 'monospace', fontSize: '15px', color: '#7a7a88',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    add(this.add.text(cx, cy + 2, word, {
+      fontFamily: 'monospace', fontSize: '40px', color, fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    add(this.add.text(cx, cy + 40, detail, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#e8e8ec',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    add(this.add.text(cx, cy + 70, `디렉터 ${this.score.director}  :  당신 ${this.score.player}`, {
+      fontFamily: 'monospace', fontSize: '16px', color: '#7a7a88',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+
+    this.stampObjects = objs;
+  }
+
+  /** 정산 표시를 걷는다 — 인터벌이 시작되기 직전, 그리고 다음 스탬프를 찍기 전. */
+  private clearStamp() {
+    for (const o of this.stampObjects) o.destroy();
+    this.stampObjects = [];
+  }
+
   private createHud() {
     this.waveText = this.add
       .text(16, 10, `웨이브 ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec' })
@@ -443,6 +575,13 @@ export class ArenaScene extends Phaser.Scene {
     this.muteText = this.add
       .text(16, 80, '', { fontFamily: 'monospace', fontSize: '11px', color: '#3a3a46' })
       .setDepth(HUD_DEPTH);
+
+    // 읽기 미터 — 전투 40초에 처음으로 '세어지는 수치'가 생기는 자리다.
+    // 예측을 아직 반증할 수 있는 동안 보여야 의미가 있으므로 상시 표시한다.
+    this.predictionText = this.add
+      .text(16, 104, '', { fontFamily: 'monospace', fontSize: '12px', color: '#7a7a88' })
+      .setDepth(HUD_DEPTH);
+    this.predictionMeter = this.add.graphics().setDepth(HUD_DEPTH);
     this.syncHearts();
     this.updateHud();
   }
@@ -461,6 +600,37 @@ export class ArenaScene extends Phaser.Scene {
     this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
 
     this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
+    this.updatePredictionMeter();
+  }
+
+  /** 걸린 예측과 그 지표를 실시간으로 그린다. 임계선을 넘으면 빨강(디렉터가 맞는 중), 아래면 흰색.
+   *  플레이어가 **자기가 그 선을 밀어 넘기는 것**을 보게 하는 게 목적이다. */
+  private updatePredictionMeter() {
+    this.predictionMeter.clear();
+    if (this.prediction === null) {
+      // 웨이브 1은 관찰 라운드, 그 뒤로는 "임계를 넘긴 습관이 없다"는 뜻이다. 빈 화면으로 두지 않는다 —
+      // 잘 움직이는 플레이어에게는 이것 자체가 디렉터의 진술이고(읽을 게 없다), 그렇게 둬야
+      // 깨끗한 런에서도 이 메커닉이 화면에 존재한다.
+      this.predictionText
+        .setText(this.currentWave <= 1 ? '디렉터가 당신을 관찰하는 중' : '읽을 습관이 없다')
+        .setColor('#3a3a46');
+      return;
+    }
+    const def = HABITS[this.prediction];
+    const r = this.currentReading();
+    const over = def.read(r) >= def.threshold;
+
+    this.predictionText
+      .setText(`"${def.claim}"  ${def.evidence(r)}`)
+      .setColor(over ? '#ff2d2d' : '#7a7a88');
+
+    const x = 16, y = 124, w = 160, h = 6;
+    this.predictionMeter.fillStyle(0x2a2a33, 1).fillRect(x, y, w, h);
+    this.predictionMeter
+      .fillStyle(over ? 0xff2d2d : 0xe8e8ec, 1)
+      .fillRect(x, y, Math.min(w, w * (meterFill(this.prediction, r) / 1.2)), h);
+    // 임계선 — 이 눈금을 넘기면 디렉터가 맞는 것이다
+    this.predictionMeter.fillStyle(0xe8e8ec, 1).fillRect(x + w / 1.2 - 1, y - 2, 2, h + 4);
   }
 
   /** 하트 개수를 player.stats.maxHp에 맞춘다(Task 8: HP_PLUS로 최대 체력이 늘면 칸도 늘어난다).

@@ -162,7 +162,20 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
         .setDepth(DEPTH_UI),
     );
 
-    pick3(directive.deny).forEach((id, i) => buildCard(id, i));
+    // 예측을 깼으면 이 라운드 디렉터의 봉인이 걸리지 않는다 — "내 읽기를 깼으니 내 봉인도 안 걸린다".
+    // 스코어에 이빨을 주는 유일한 지점이고, 승패 조건과 예산에는 손대지 않는다.
+    const denyThisRound = scene.brokePrediction ? 'NONE' : directive.deny;
+    if (scene.brokePrediction && directive.deny !== 'NONE') {
+      track(
+        scene.add
+          .text(scene.scale.width / 2, SUBHEAD_Y + 22, '예측을 깼다 — 이번 봉인은 걸리지 않는다', {
+            fontFamily: 'monospace', fontSize: '12px', color: RED_HEX,
+          })
+          .setOrigin(0.5)
+          .setDepth(DEPTH_UI),
+      );
+    }
+    pick3(denyThisRound).forEach((id, i) => buildCard(id, i));
   }
 
   function buildCard(id: UpgradeId, index: number) {

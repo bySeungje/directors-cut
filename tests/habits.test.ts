@@ -6,12 +6,12 @@ import {
 import { MUTATIONS } from '../src/contracts/directive';
 
 const at = (over: Partial<HabitReading> = {}): HabitReading =>
-  ({ corner: 0, anchor: 0, dashRate: 0, ...over });
+  ({ corner: 0, anchor: 0, dashUptime: 0, ...over });
 
 /** 해당 습관만 임계를 넘긴 입력 */
 const only = (id: HabitId, mult = 1.2): HabitReading => {
   const t = HABITS[id].threshold * mult;
-  return at(id === 'ANCHOR' ? { anchor: t } : id === 'CORNER' ? { corner: t } : { dashRate: t });
+  return at(id === 'ANCHOR' ? { anchor: t } : id === 'CORNER' ? { corner: t } : { dashUptime: t });
 };
 
 describe('습관 어휘', () => {
@@ -36,7 +36,7 @@ describe('습관 어휘', () => {
 
 describe('detectHabit — 우선순위 고정', () => {
   it('아무것도 임계를 못 넘으면 null (잘 움직이는 플레이어)', () => {
-    expect(detectHabit(at({ corner: 0.25, anchor: 0.10, dashRate: 0.05 }))).toBeNull();
+    expect(detectHabit(at({ corner: 0.25, anchor: 0.10, dashUptime: 0.05 }))).toBeNull();
   });
 
   it('넘긴 것이 하나면 그것을 고른다', () => {

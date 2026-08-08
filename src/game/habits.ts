@@ -1,4 +1,7 @@
-import type { Mutation } from '../contracts/directive';
+import { HABIT_IDS, type HabitId, type Mutation } from '../contracts/directive';
+
+export { HABIT_IDS };
+export type { HabitId };
 
 /**
  * 습관 어휘 — 디렉터가 "너는 이걸 못 버린다"고 거는 명제와 그 채점 규칙.
@@ -8,14 +11,15 @@ import type { Mutation } from '../contracts/directive';
  *
  * 어휘가 5종에서 3종으로 줄어든 경위와 폐기 사유: `docs/_hub/nodes/D-habits-five-to-three.md`
  */
-export const HABIT_IDS = ['ANCHOR', 'CORNER', 'DASH'] as const;
-export type HabitId = (typeof HABIT_IDS)[number];
-
-/** 판정 입력. corner·anchor는 롤링 창 기준(collector.peek()), dashRate는 초당 대시 횟수. */
+/** 판정 입력. corner·anchor는 롤링 창 기준(`collector.peek()`).
+ *
+ *  `dashUptime`은 초당 횟수가 아니라 **자기 쿨다운 대비 가동률**(0~1)이다 — 절대 횟수·절대 비율은
+ *  `DASH_CD_DOWN`으로 쿨다운이 줄면 최대치가 올라가(2000ms → 3회 강화 시 1024ms) 같은 습관인데
+ *  수치가 커진다. 웨이브 길이로 나눈 값이 길이를 재던 것과 같은 함정이다. */
 export interface HabitReading {
   corner: number;
   anchor: number;
-  dashRate: number;
+  dashUptime: number;
 }
 
 export type Verdict = 'HIT' | 'BROKEN' | 'VOID';
@@ -49,7 +53,9 @@ export const HABITS: Record<HabitId, HabitDef> = {
   ANCHOR: {
     claim: '너는 한자리에 뿌리내렸다',
     label: '한자리',
-    threshold: 0.35,
+    // 실측 분리: 구석 캠핑 0.37~0.42 · 정지 1.00 vs 원 궤도 0.13 · 외곽 순찰 0.06.
+    // 0.30이면 느슨한 캠퍼도 잡으면서 이동형과 2배 이상 여유가 남는다.
+    threshold: 0.30,
     read: (r) => r.anchor,
     voidedBy: ['LAVA_HOTSPOT'],
     evidence: (r) => `한 지점 체류 ${Math.round(r.anchor * 100)}%`,
@@ -57,7 +63,10 @@ export const HABITS: Record<HabitId, HabitDef> = {
   CORNER: {
     claim: '너는 그 구석을 떠나지 않는다',
     label: '한 구석',
-    threshold: 0.40,
+    // 균등 분포가 0.25다. 0.40은 잘 움직이는 궤적(전면 이동 0.33~0.42)과 겹쳐 선택이 튀었다 —
+    // 습관이 아니라 이동 자체를 잡는 셈이라 WALL과 같은 실패였다. 0.48이면 진짜 반쪽 캠핑
+    // (우측 절반만 0.51~0.57)만 걸리고 전면 이동은 안 걸린다.
+    threshold: 0.48,
     read: (r) => r.corner,
     // LAVA_LEFT/RIGHT의 경계가 사분면 경계와 같은 선이라, 용암을 피하면 비둘기집 원리로
     // max(quadrantTime) ≥ 0.50이 확정된다. 플레이어의 행동과 무관한 적중이 된다.
@@ -67,11 +76,12 @@ export const HABITS: Record<HabitId, HabitDef> = {
   DASH: {
     claim: '너는 대시에 의존한다',
     label: '대시',
-    // 카운트가 아니라 비율이다 — 카운트는 웨이브가 길어질수록 자동 증가라 판정이 아니라 시계가 된다.
-    threshold: 0.22,
-    read: (r) => r.dashRate,
+    // 쿨다운 가동률이다 — 카운트는 웨이브 길이를, 절대 비율은 업그레이드 상태를 재게 된다.
+    // 0.65 = 쓸 수 있을 때의 2/3 이상을 쓴다 = "의존한다". 쿨다운이 줄어도 정의가 안 흔들린다.
+    threshold: 0.65,
+    read: (r) => r.dashUptime,
     voidedBy: [],
-    evidence: (r) => `초당 ${r.dashRate.toFixed(2)}회`,
+    evidence: (r) => `대시 가동률 ${Math.round(r.dashUptime * 100)}%`,
   },
 };
 
