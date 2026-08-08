@@ -56,6 +56,9 @@ export class VaultScene extends Phaser.Scene {
   private settleLabel!: Phaser.GameObjects.Text;
   private pupil!: Phaser.GameObjects.Arc;
   private currentTaunt = '';
+  private logPanel?: Phaser.GameObjects.Text;
+  private lastDirective: SessionDirective | null = null;
+  private lastFromLLM = false;
 
   constructor() {
     super('VaultScene');
@@ -75,6 +78,7 @@ export class VaultScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-RIGHT', () => this.chooseDoor('R'));
     this.input.keyboard!.on('keydown-S', () => this.trySettle());
     this.input.keyboard!.on('keydown-M', () => toggleMute());
+    this.input.keyboard!.on('keydown-D', () => this.toggleDirectorLog());
 
     this.setDialogue(
       runCount > 1 ? `다시 왔군. 네 버릇 장부는 그대로다. (${runCount}번째)` : '지금부터 당신을 관찰한다.',
@@ -280,8 +284,10 @@ export class VaultScene extends Phaser.Scene {
     panel.add([box, header, body]);
     this.tweens.add({ targets: body, alpha: 0.4, duration: 450, yoyo: true, repeat: -1 });
 
-    const directive: SessionDirective =
-      (await requestSessionDirective(input)) ?? assembleSessionFallback(input.candidates, no, input.roundNo);
+    const llm = await requestSessionDirective(input);
+    const directive: SessionDirective = llm ?? assembleSessionFallback(input.candidates, no, input.roundNo);
+    this.lastDirective = directive;
+    this.lastFromLLM = llm !== null;
 
     this.heist.applyDirective(directive.readPatternId, directive.strategy, directive.baitDoor);
     this.heist.markSessionDone();
@@ -323,6 +329,31 @@ export class VaultScene extends Phaser.Scene {
       this.input.off('pointerdown', onClick);
       if (this.phase === 'session') dismiss();
     });
+  }
+
+  /** 디렉터 로그 (D 토글) — 원본 디렉티브·앙상블 성적. 시연·기술 문서 스크린샷용 (스펙 §3.5) */
+  private toggleDirectorLog() {
+    if (this.logPanel) {
+      this.logPanel.destroy();
+      this.logPanel = undefined;
+      return;
+    }
+    const stats = this.heist.ensemble
+      .stats()
+      .map((s) => `${s.id} ${s.score}`)
+      .join(' · ');
+    const body = [
+      `DIRECTOR LOG  (source: ${this.lastDirective ? (this.lastFromLLM ? 'LLM' : 'FALLBACK') : '세션 전'})`,
+      this.lastDirective ? JSON.stringify(this.lastDirective, null, 1) : '(첫 읽기 세션 전 — 덫은 로컬 앙상블 단독)',
+      `ensemble: ${stats}`,
+      `window: ${this.heist.ensemble.windowActive() ? 'ACTIVE' : 'off'}`,
+    ].join('\n');
+    this.logPanel = this.add
+      .text(12, 60, body, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#9a9aa8',
+        backgroundColor: '#0e0e15', padding: { x: 10, y: 8 }, wordWrap: { width: 430 },
+      })
+      .setDepth(95);
   }
 
   private gotoEnd() {
