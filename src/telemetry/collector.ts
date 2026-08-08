@@ -27,6 +27,9 @@ export class WaveTelemetry {
   private totalTime = 0;
   private shots = 0;
   private hits = 0;
+  private manualAttacks = 0;
+  private visionExposureSec = 0;
+  private exitReached = false;
   private kills: Partial<Record<EnemyType, number>> = {};
   private damage: Partial<Record<EnemyType, number>> = {};
   private dashes = 0;
@@ -81,6 +84,9 @@ export class WaveTelemetry {
     }
   }
   recordShot(hit: boolean) { this.shots++; if (hit) this.hits++; }
+  recordManualAttack() { this.manualAttacks++; }
+  recordVisionExposure(dt: number) { this.visionExposureSec += dt; }
+  recordExitReached() { this.exitReached = true; }
   recordKill(t: EnemyType) { this.kills[t] = (this.kills[t] ?? 0) + 1; }
   recordDamage(t: EnemyType) { this.damage[t] = (this.damage[t] ?? 0) + 1; }
   recordDash() { this.dashes++; }
@@ -127,6 +133,11 @@ export class WaveTelemetry {
         kills: this.kills,
         accuracy: this.shots ? Math.round((this.hits / this.shots) * 100) / 100 : 0,
         clusterRatio: this.clusterTime > 0 ? Math.round((this.cluster / this.clusterTime) * 100) / 100 : 0,
+        manualAttacks: this.manualAttacks,
+      },
+      stealth: {
+        visionExposureSec: Math.round(this.visionExposureSec * 10) / 10,
+        exitReached: this.exitReached,
       },
       upgrades, prevMutations,
     };

@@ -46,6 +46,7 @@ const CAMERA_FRAME_MARGIN_X = 120;
 const CAMERA_FRAME_MARGIN_Y = 82;
 const PRIORITY_TARGET_COUNT = 3;
 const EXIT_ZONE_RADIUS = 26;
+const WALL_HEIGHT = 14;
 
 type StageRule = 'NONE' | 'SEARCHLIGHT' | 'SURVEILLANCE_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_LOCKDOWN' | 'FINAL_CORE';
 
@@ -55,6 +56,87 @@ interface SectorStory {
   directorLine: string;
   rule: StageRule;
 }
+
+interface WallSpec { x: number; y: number; w: number; h: number }
+interface SectorLayout {
+  start: { x: number; y: number };
+  exit: { x: number; y: number };
+  walls: WallSpec[];
+}
+
+const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
+  1: {
+    start: { x: 92, y: 548 },
+    exit: { x: 858, y: 92 },
+    walls: [
+      { x: 270, y: 420, w: 260, h: 28 },
+      { x: 565, y: 250, w: 28, h: 260 },
+      { x: 720, y: 390, w: 240, h: 28 },
+    ],
+  },
+  2: {
+    start: { x: 92, y: 92 },
+    exit: { x: 866, y: 540 },
+    walls: [
+      { x: 260, y: 220, w: 28, h: 250 },
+      { x: 454, y: 398, w: 260, h: 28 },
+      { x: 688, y: 212, w: 28, h: 250 },
+    ],
+  },
+  3: {
+    start: { x: 92, y: 548 },
+    exit: { x: 864, y: 544 },
+    walls: [
+      { x: 248, y: 324, w: 28, h: 360 },
+      { x: 456, y: 154, w: 310, h: 28 },
+      { x: 672, y: 386, w: 28, h: 300 },
+      { x: 730, y: 270, w: 240, h: 28 },
+    ],
+  },
+  4: {
+    start: { x: 480, y: 548 },
+    exit: { x: 480, y: 76 },
+    walls: [
+      { x: 206, y: 250, w: 280, h: 28 },
+      { x: 754, y: 250, w: 280, h: 28 },
+      { x: 320, y: 420, w: 28, h: 190 },
+      { x: 640, y: 420, w: 28, h: 190 },
+    ],
+  },
+  5: {
+    start: { x: 92, y: 322 },
+    exit: { x: 868, y: 320 },
+    walls: [
+      { x: 284, y: 142, w: 28, h: 230 },
+      { x: 284, y: 506, w: 28, h: 190 },
+      { x: 508, y: 322, w: 300, h: 28 },
+      { x: 718, y: 142, w: 28, h: 230 },
+      { x: 718, y: 506, w: 28, h: 190 },
+    ],
+  },
+  6: {
+    start: { x: 92, y: 548 },
+    exit: { x: 862, y: 88 },
+    walls: [
+      { x: 202, y: 320, w: 28, h: 430 },
+      { x: 394, y: 112, w: 300, h: 28 },
+      { x: 422, y: 438, w: 28, h: 260 },
+      { x: 632, y: 292, w: 300, h: 28 },
+      { x: 776, y: 458, w: 28, h: 210 },
+    ],
+  },
+  7: {
+    start: { x: 480, y: 560 },
+    exit: { x: 480, y: 76 },
+    walls: [
+      { x: 204, y: 232, w: 260, h: 28 },
+      { x: 756, y: 232, w: 260, h: 28 },
+      { x: 204, y: 426, w: 260, h: 28 },
+      { x: 756, y: 426, w: 260, h: 28 },
+      { x: 480, y: 322, w: 30, h: 290 },
+    ],
+  },
+};
 
 const SECTOR_STORIES: Record<number, SectorStory> = {
   1: {
@@ -137,6 +219,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private playerBullets!: Phaser.Physics.Arcade.Group;
   private enemyBullets!: Phaser.Physics.Arcade.Group;
+  private walls!: Phaser.Physics.Arcade.StaticGroup;
 
   private playerDead = false;
   private waveClearedEmitted = false;
@@ -166,6 +249,7 @@ export class ArenaScene extends Phaser.Scene {
   private stampObjects: Phaser.GameObjects.GameObject[] = [];
   private stageRule: StageRule = 'NONE';
   private stageObjects: Phaser.GameObjects.GameObject[] = [];
+  private wallObjects: Phaser.GameObjects.GameObject[] = [];
   private stageRuleDamageAcc = 0;
   private spotlightHoldSec = 0;
   private spotlight!: Phaser.GameObjects.Graphics;
@@ -184,6 +268,7 @@ export class ArenaScene extends Phaser.Scene {
   private objectiveText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
+  private attackGauge!: Phaser.GameObjects.Graphics;
   private muteText!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -202,6 +287,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: false });
     this.playerBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
     this.enemyBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
+    this.walls = this.physics.add.staticGroup();
     this.visionGraphics = this.add.graphics().setDepth(-8);
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
@@ -213,6 +299,10 @@ export class ArenaScene extends Phaser.Scene {
     this.physics.add.overlap(this.playerBullets, this.enemies, this.handlePlayerBulletHitEnemy, undefined, this);
     this.physics.add.overlap(this.player, this.enemies, this.handleEnemyTouchPlayer, undefined, this);
     this.physics.add.overlap(this.player, this.enemyBullets, this.handleEnemyBulletHitPlayer, undefined, this);
+    this.physics.add.collider(this.player, this.walls);
+    this.physics.add.collider(this.enemies, this.walls);
+    this.physics.add.collider(this.playerBullets, this.walls, this.handleBulletHitWall, undefined, this);
+    this.physics.add.collider(this.enemyBullets, this.walls, this.handleBulletHitWall, undefined, this);
 
     this.playerDead = false;
     this.runEnded = false;
@@ -238,6 +328,7 @@ export class ArenaScene extends Phaser.Scene {
     this.brokePrediction = false;
     this.stageRule = 'NONE';
     this.stageObjects = [];
+    this.wallObjects = [];
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
     this.detectionLevel = 0;
@@ -281,7 +372,12 @@ export class ArenaScene extends Phaser.Scene {
     );
 
     const fireAngles = this.player.update(time, delta, this.enemies);
-    if (fireAngles.length > 0) playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
+    if (fireAngles.length > 0) {
+      playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
+      this.telemetry.recordManualAttack();
+      this.detectionLevel = Math.min(1.15, this.detectionLevel + 0.18);
+      this.flashStageNote('NOISE SIGNATURE LOGGED', '#f59e0b');
+    }
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     const enemyList = this.enemies.getChildren() as Enemy[];
@@ -369,6 +465,12 @@ export class ArenaScene extends Phaser.Scene {
     if (dead) this.onEnemyDeath(enemy);
   };
 
+  private handleBulletHitWall = (bulletObj: unknown) => {
+    const bullet = bulletObj as Bullet;
+    if (!bullet.active) return;
+    bullet.hideAfterHit();
+  };
+
   private handleEnemyTouchPlayer = (_playerObj: unknown, enemyObj: unknown) => {
     const enemy = enemyObj as Enemy;
     if (!enemy.active) return;
@@ -428,7 +530,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkWaveClear() {
     if (this.waveClearedEmitted || !this.enemiesSpawned || this.playerDead) return;
-    const canEscape = this.exitReached || this.enemies.countActive(true) === 0;
+    const canEscape = this.exitReached;
     if (canEscape && this.stageObjectiveComplete()) {
       this.waveClearedEmitted = true;
       console.log('[ArenaScene] wave-cleared', { wave: this.currentWave });
@@ -462,6 +564,7 @@ export class ArenaScene extends Phaser.Scene {
     this.storyText.setText(story.title);
     this.objectiveText.setText(story.objective);
     this.showSceneCard(story);
+    this.setupSectorMap();
     this.setupExitZone();
 
     switch (this.stageRule) {
@@ -489,6 +592,7 @@ export class ArenaScene extends Phaser.Scene {
   private clearStageRule() {
     for (const o of this.stageObjects) o.destroy();
     this.stageObjects = [];
+    this.clearSectorMap();
     this.priorityTargets.clear();
     this.cameraFrame = null;
     this.stageRule = 'NONE';
@@ -499,20 +603,61 @@ export class ArenaScene extends Phaser.Scene {
     this.visionGraphics?.clear();
   }
 
+  private clearSectorMap() {
+    this.walls?.clear(true, true);
+    for (const o of this.wallObjects) o.destroy();
+    this.wallObjects = [];
+  }
+
+  private sectorLayout(): SectorLayout {
+    return SECTOR_LAYOUTS[this.currentWave] ?? SECTOR_LAYOUTS[FINAL_WAVE];
+  }
+
+  private setupSectorMap() {
+    const layout = this.sectorLayout();
+    this.player.setPosition(layout.start.x, layout.start.y);
+    this.player.body.setVelocity(0, 0);
+    this.drawStartPad(layout.start.x, layout.start.y);
+    for (const wall of layout.walls) this.addSectorWall(wall);
+  }
+
+  private drawStartPad(x: number, y: number) {
+    const g = this.trackWallObject(this.add.graphics().setDepth(-42));
+    g.fillStyle(0xe8e8ec, 0.045).fillCircle(x, y, 28);
+    g.lineStyle(1, 0xe8e8ec, 0.28).strokeCircle(x, y, 28);
+    g.lineStyle(1, 0x6ee7ff, 0.36).lineBetween(x - 16, y, x + 16, y).lineBetween(x, y - 16, x, y + 16);
+  }
+
+  private addSectorWall(wall: WallSpec) {
+    const bodyRect = this.add.rectangle(wall.x, wall.y, wall.w, wall.h, 0x111722, 0.01);
+    this.walls.add(bodyRect);
+    const body = bodyRect.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(wall.w, wall.h);
+    body.updateFromGameObject();
+
+    const x = wall.x - wall.w / 2;
+    const y = wall.y - wall.h / 2;
+    const g = this.trackWallObject(this.add.graphics().setDepth(-38));
+    g.fillStyle(0x05070b, 0.42).fillRect(x + 10, y + 10, wall.w, wall.h + WALL_HEIGHT);
+    g.fillStyle(0x111722, 1).fillRect(x, y, wall.w, wall.h);
+    g.fillStyle(0x202938, 1).fillRect(x, y - WALL_HEIGHT, wall.w, WALL_HEIGHT);
+    g.fillStyle(0x0b0f18, 1).fillRect(x, y + wall.h, wall.w, WALL_HEIGHT);
+    g.lineStyle(1, 0x344155, 0.72).strokeRect(x, y - WALL_HEIGHT, wall.w, wall.h + WALL_HEIGHT);
+    g.lineStyle(1, 0x6ee7ff, 0.12).lineBetween(x + 8, y - WALL_HEIGHT + 4, x + wall.w - 8, y - WALL_HEIGHT + 4);
+  }
+
+  private trackWallObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
+    this.wallObjects.push(obj);
+    return obj;
+  }
+
   private trackStageObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
     this.stageObjects.push(obj);
     return obj;
   }
 
   private setupExitZone() {
-    const margin = 74;
-    const slots = [
-      { x: this.scale.width - margin, y: this.scale.height - margin },
-      { x: this.scale.width - margin, y: margin },
-      { x: margin, y: this.scale.height - margin },
-      { x: this.scale.width / 2, y: margin },
-    ];
-    const p = slots[(this.currentWave - 1) % slots.length];
+    const p = this.sectorLayout().exit;
     this.exitZone = new Phaser.Geom.Circle(p.x, p.y, EXIT_ZONE_RADIUS);
     this.exitGraphics = this.trackStageObject(this.add.graphics().setDepth(-6));
     this.drawExitZone();
@@ -530,6 +675,8 @@ export class ArenaScene extends Phaser.Scene {
     this.exitGraphics.lineBetween(this.exitZone.x - 12, this.exitZone.y, this.exitZone.x + 12, this.exitZone.y);
     this.exitGraphics.lineBetween(this.exitZone.x + 6, this.exitZone.y - 7, this.exitZone.x + 14, this.exitZone.y);
     this.exitGraphics.lineBetween(this.exitZone.x + 6, this.exitZone.y + 7, this.exitZone.x + 14, this.exitZone.y);
+    this.exitGraphics.fillStyle(0x0a0a0f, 0.78).fillRect(this.exitZone.x - 20, this.exitZone.y - 32, 40, 10);
+    this.exitGraphics.fillStyle(0x6ee7ff, this.exitReached ? 0.95 : 0.55).fillRect(this.exitZone.x - 16, this.exitZone.y - 30, 32, 4);
   }
 
   private showSceneCard(story: SectorStory) {
@@ -621,6 +768,7 @@ export class ArenaScene extends Phaser.Scene {
     this.drawExitZone();
     if (this.exitZone && !this.exitReached && this.exitZone.contains(this.player.x, this.player.y)) {
       this.exitReached = true;
+      this.telemetry.recordExitReached();
       this.detectionLevel = 0;
       this.flashStageNote('EXIT ROUTE OPEN', '#6ee7ff');
       this.checkWaveClear();
@@ -628,6 +776,7 @@ export class ArenaScene extends Phaser.Scene {
 
     const seenBy = this.drawVisionCones();
     if (seenBy) {
+      this.telemetry.recordVisionExposure(dt);
       this.detectionLevel = Math.min(1.35, this.detectionLevel + DETECTION_BUILD_PER_SEC * dt);
       if (this.detectionLevel >= 1) {
         this.detectionLevel = 0.62;
@@ -984,13 +1133,19 @@ export class ArenaScene extends Phaser.Scene {
     const { width: w, height: h } = this.scale;
     const g = this.add.graphics().setDepth(-100);
 
-    // 보안 시설 바닥 격자 — 이동이 눈에 잡히게 하는 참조선.
+    // 사선 보안 시설 바닥 격자 — 2.5D 공간감을 주는 참조선.
+    g.fillGradientStyle(0x0b1018, 0x0b1018, 0x080910, 0x080910, 1, 1, 1, 1);
+    g.fillRect(0, 0, w, h);
     g.lineStyle(1, 0x14141c, 1);
     for (let x = 120; x < w; x += 120) g.lineBetween(x, 0, x, h);
     for (let y = 120; y < h; y += 120) g.lineBetween(0, y, w, y);
     g.lineStyle(1, 0x1b2d3a, 0.45);
     for (let x = 60; x < w; x += 240) g.lineBetween(x, 0, x, h);
     for (let y = 60; y < h; y += 240) g.lineBetween(0, y, w, y);
+    g.lineStyle(1, 0x223144, 0.32);
+    for (let x = -h; x < w; x += 120) g.lineBetween(x, h, x + h, 0);
+    g.lineStyle(1, 0x0f2631, 0.28);
+    for (let x = 0; x < w + h; x += 180) g.lineBetween(x, 0, x - h, h);
 
     // 경계선
     g.lineStyle(2, 0x23232e, 1).strokeRect(1, 1, w - 2, h - 2);
@@ -1023,6 +1178,7 @@ export class ArenaScene extends Phaser.Scene {
       .setDepth(HUD_DEPTH);
 
     this.dashGauge = this.add.graphics().setDepth(HUD_DEPTH);
+    this.attackGauge = this.add.graphics().setDepth(HUD_DEPTH);
     this.muteText = this.add
       .text(16, 80, '', { fontFamily: 'monospace', fontSize: '11px', color: '#3a3a46' })
       .setDepth(HUD_DEPTH);
@@ -1050,7 +1206,12 @@ export class ArenaScene extends Phaser.Scene {
     const frac = this.player.dashReadyFraction(this.time.now);
     this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
 
-    this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
+    this.attackGauge.clear();
+    this.attackGauge.fillStyle(0x2a2a33, 1).fillRect(x, y + 10, w, h);
+    const disruptFrac = this.player.disruptReadyFraction(this.time.now);
+    this.attackGauge.fillStyle(0xf59e0b, 0.92).fillRect(x, y + 10, w * disruptFrac, h);
+
+    this.muteText.setText(isMuted() ? '[M] 음소거 중 · [E/J] 교란' : '[M] 소리 켜짐 · [E/J] 교란');
     this.updateObjectiveText();
     this.updatePredictionMeter();
   }
@@ -1120,10 +1281,10 @@ export class ArenaScene extends Phaser.Scene {
     track(this.add.text(width / 2, height / 2 - 32, 'AI 감옥의 보안 구역을 돌파하라', {
       fontFamily: 'monospace', fontSize: '30px', color: '#e8e8ec', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    track(this.add.text(width / 2, height / 2 + 30, 'DIRECTOR는 네 탈출 습관을 기록한다. 모서리에 숨고, 같은 길로 돌고, 대시로 버티면\n다음 보안 구역이 그 습관을 겨냥해 재설계된다.', {
+    track(this.add.text(width / 2, height / 2 + 30, 'DIRECTOR는 네 탈출 습관을 기록한다. 숨는지, 싸우는지, 대시로 뚫는지, 같은 길을 반복하는지\n다음 보안 구역이 그 선택을 겨냥해 재설계된다.', {
       fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    const start = track(this.add.text(width / 2, height / 2 + 90, '클릭해서 탈출 시작', {
+    const start = track(this.add.text(width / 2, height / 2 + 90, '클릭해서 구역 침투', {
       fontFamily: 'monospace', fontSize: '16px', color: '#e8e8ec', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
     this.tweens.add({ targets: start, alpha: 0.35, duration: 520, yoyo: true, repeat: -1 });

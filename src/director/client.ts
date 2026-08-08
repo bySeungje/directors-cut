@@ -16,7 +16,7 @@ const WARMUP_LOG: WaveLog = {
 export async function requestDirective(
   log: WaveLog, wave: number, prevMutation: Mutation, prevBuff: BuffCard, prevDeny: DenyTarget,
 ): Promise<{ directive: Directive; fromLLM: boolean }> {
-  if (!DIRECTOR_URL) return { directive: pickFallback(wave, prevMutation), fromLLM: false };
+  if (!DIRECTOR_URL) return { directive: pickFallback(wave, prevMutation, log), fromLLM: false };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -32,7 +32,7 @@ export async function requestDirective(
     if (!valid) throw new Error('invalid directive');
     return { directive: valid, fromLLM: true };
   } catch {
-    return { directive: pickFallback(wave, prevMutation), fromLLM: false };
+    return { directive: pickFallback(wave, prevMutation, log), fromLLM: false };
   } finally {
     clearTimeout(timer);
   }

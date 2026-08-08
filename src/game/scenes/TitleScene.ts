@@ -40,7 +40,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 감시 시야 회피\n시야에 오래 들면 발각된다. 같은 탈출 루트를 반복하면 DIRECTOR가 다음 구역을 네 약점으로 바꾼다.', {
+      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · E/J 수동 교란 · 출구 도달\n공격, 회피, 대시, 같은 루트 반복까지 DIRECTOR가 다음 구역 설계에 반영한다.', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
       })
       .setOrigin(0.5);

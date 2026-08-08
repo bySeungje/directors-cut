@@ -266,7 +266,7 @@ function computeMultishotAngles(center: number, n: number): number[] {
 type PlayerKeys = {
   W: Phaser.Input.Keyboard.Key; A: Phaser.Input.Keyboard.Key;
   S: Phaser.Input.Keyboard.Key; D: Phaser.Input.Keyboard.Key;
-  SPACE: Phaser.Input.Keyboard.Key;
+  SPACE: Phaser.Input.Keyboard.Key; E: Phaser.Input.Keyboard.Key; J: Phaser.Input.Keyboard.Key;
 };
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
@@ -293,7 +293,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setCollideWorldBounds(true);
     const off = PLAYER_TEX_SIZE / 2 - PLAYER_RADIUS;
     this.setCircle(PLAYER_RADIUS, off, off);
-    this.keys = scene.input.keyboard!.addKeys('W,A,S,D,SPACE') as unknown as PlayerKeys;
+    this.keys = scene.input.keyboard!.addKeys('W,A,S,D,SPACE,E,J') as unknown as PlayerKeys;
   }
 
   isInvulnerable(time: number): boolean {
@@ -323,7 +323,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return 1 - Phaser.Math.Clamp(remaining / this.stats.dashCooldownMs, 0, 1);
   }
 
-  /** 이동·대시·시선·깜빡임 처리 후, 긴급 교란 펄스 각도 목록(현재 기본 0발)을 반환 */
+  disruptReadyFraction(time: number): number {
+    const elapsed = time - this.lastFireAt;
+    return Phaser.Math.Clamp(elapsed / this.stats.fireRateMs, 0, 1);
+  }
+
+  /** 이동·대시·시선·깜빡임 처리 후, 수동 긴급 교란 펄스 각도 목록을 반환 */
   update(time: number, _delta: number, enemies: Phaser.Physics.Arcade.Group): number[] {
     this.handleMovement(time);
     this.handleDash(time);
@@ -332,10 +337,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const nearest = findNearestActiveEnemy(this.x, this.y, enemies);
     if (nearest) this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, nearest.x, nearest.y));
 
-    // 탈출 게임의 중심은 교전이 아니라 감시 회피다. EMP 스탯/업그레이드는 긴급 교란용으로 남기되,
-    // 기본 루프에서는 자동 발사를 끄고 시야·출구 판단이 플레이의 전면에 오게 한다.
-    if (!nearest || time - this.lastFireAt < this.stats.fireRateMs) return [];
-    return [];
+    const wantsDisrupt = Phaser.Input.Keyboard.JustDown(this.keys.E) || Phaser.Input.Keyboard.JustDown(this.keys.J);
+    if (!wantsDisrupt || !nearest || time - this.lastFireAt < this.stats.fireRateMs) return [];
+    this.lastFireAt = time;
+    return computeMultishotAngles(Phaser.Math.Angle.Between(this.x, this.y, nearest.x, nearest.y), this.stats.multishot);
   }
 
   private handleMovement(time: number) {

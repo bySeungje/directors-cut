@@ -1,4 +1,4 @@
-import { Directive, Mutation } from '../contracts/directive';
+import { Directive, Mutation, WaveLog } from '../contracts/directive';
 import { fillToBudgetFloor } from './validator';
 
 export const OPENING_WAVE: Directive = {
@@ -46,11 +46,58 @@ const BANK: Record<number, Directive[]> = {
   ],
 };
 
-export function pickFallback(wave: number, prevMutation: Mutation): Directive {
+export function pickFallback(wave: number, prevMutation: Mutation, log?: WaveLog): Directive {
   const pool = (BANK[wave] ?? BANK[7]).filter((d) => d.mutation === 'NONE' || d.mutation !== prevMutation);
   const base = pool[Math.floor(Math.random() * pool.length)];
+  const adapted = adaptToPlayerStyle(base, log, prevMutation);
   // 뱅크는 validateDirective를 거치지 않으므로 예산 하한이 걸리지 않는다 — 곡선을 올려도 폴백 경로는
   // 옛 크기 그대로였다. 그런데 API 키가 없는 심사자와 로컬 개발이 보는 것이 정확히 이 경로다.
   // 여기서 하한을 태워, 뱅크 19항목을 손으로 다시 쓰지 않고도 곡선 변경이 폴백에 그대로 반영되게 한다.
-  return { ...base, composition: fillToBudgetFloor(base.composition, wave, base.buff) };
+  return { ...adapted, composition: fillToBudgetFloor(adapted.composition, wave, adapted.buff) };
+}
+
+function adaptToPlayerStyle(base: Directive, log: WaveLog | undefined, prevMutation: Mutation): Directive {
+  if (!log) return base;
+  const manualAttacks = log.combat.manualAttacks ?? 0;
+  const disables = Object.values(log.combat.kills).reduce((s, n) => s + (n ?? 0), 0);
+  const attackHeavy = manualAttacks >= 4 || disables >= 3;
+  const dashHeavy = log.movement.dashCount >= 8;
+  const wallRoute = log.movement.wallHugRatio >= 0.46;
+  const exposed = (log.stealth?.visionExposureSec ?? 0) >= 6;
+
+  if (attackHeavy) {
+    return {
+      ...base,
+      buff: 'TOUGH',
+      deny: 'DAMAGE_UP',
+      taunt: '교란 소음 확인. 다음 구역 경비 장갑을 보강한다.',
+      intent: `${base.intent} + 공격 성향 대응`,
+    };
+  }
+  if (dashHeavy) {
+    return {
+      ...base,
+      buff: 'INTERCEPT',
+      deny: 'DASH_CD_DOWN',
+      taunt: '대시 돌파 패턴 확인. 이동 예측 감시를 켠다.',
+      intent: `${base.intent} + 대시 성향 대응`,
+    };
+  }
+  if (wallRoute && prevMutation !== 'LAVA_HOTSPOT') {
+    return {
+      ...base,
+      mutation: 'LAVA_HOTSPOT',
+      taunt: '벽면 우회 루트 확인. 네가 오래 머문 길부터 태운다.',
+      intent: `${base.intent} + 벽면 루트 대응`,
+    };
+  }
+  if (exposed) {
+    return {
+      ...base,
+      buff: 'EVASIVE',
+      taunt: '감시 노출이 길다. 다음 드론은 더 오래 시야를 유지한다.',
+      intent: `${base.intent} + 노출 성향 대응`,
+    };
+  }
+  return base;
 }

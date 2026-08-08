@@ -209,7 +209,7 @@ export class EndScene extends Phaser.Scene {
     this.add
       .text(
         width / 2, STAT_Y,
-        `${summary.wavesReached} SECTORS · 교란 ${summary.totalKills} · 신호 적중률 ${accuracyPct}% · 대시 ${summary.totalDashCount}회`,
+        `${summary.wavesReached} SECTORS · 무력화 ${summary.totalKills} · 교란입력 ${summary.totalManualAttacks} · 노출 ${summary.visionExposureSec.toFixed(1)}s · 적중 ${accuracyPct}%`,
         { fontFamily: 'monospace', fontSize: '15px', color: DIM_HEX },
       )
       .setOrigin(0.5)

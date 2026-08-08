@@ -11,7 +11,9 @@ export interface RunSummary {
   waves: WaveLog[];
   upgrades: string[];
   totalKills: number;
+  totalManualAttacks: number;
   avgAccuracy: number;
+  visionExposureSec: number;
   totalDashCount: number;
   /** 예측 판정 누계(디렉터 : 당신). 승패와 별개 축이다 — 지면서 이길 수 있다.
    *  선택 필드로 둔다: 기존 호출부 8곳이 3인자로 부르고 있어 필수로 만들면 타입체크가 깨진다. */
@@ -33,10 +35,12 @@ export function buildRunSummary(
     0,
   );
   const avgAccuracy = waves.length ? waves.reduce((s, w) => s + w.combat.accuracy, 0) / waves.length : 0;
+  const totalManualAttacks = waves.reduce((s, w) => s + (w.combat.manualAttacks ?? 0), 0);
+  const visionExposureSec = Math.round(waves.reduce((s, w) => s + (w.stealth?.visionExposureSec ?? 0), 0) * 10) / 10;
   const totalDashCount = waves.reduce((s, w) => s + w.movement.dashCount, 0);
   const wavesReached = waves.length ? waves[waves.length - 1].wave : 0;
   const habitsRead = waves.map((w) => w.dominantHabit).filter((h): h is NonNullable<typeof h> => !!h);
-  return { result, wavesReached, waves, upgrades, totalKills, avgAccuracy, totalDashCount, verdicts, habitsRead };
+  return { result, wavesReached, waves, upgrades, totalKills, totalManualAttacks, avgAccuracy, visionExposureSec, totalDashCount, verdicts, habitsRead };
 }
 
 /** 엔드게임 리포트 요청 — 8초 내 반드시 resolve(실패 시 정적 폴백 템플릿). */
@@ -81,6 +85,7 @@ export function pickFallbackTitle(summary: RunSummary): string {
     ? summary.waves.reduce((s, w) => s + w.movement.wallHugRatio, 0) / summary.waves.length
     : 0;
   if (wallHugAvg >= 0.5) return '벽면 곡예사';
+  if (summary.totalManualAttacks >= 20) return '소음 탈옥자';
   if (summary.totalDashCount >= 40) return '회피 기동 전문';
   if (summary.avgAccuracy >= 0.7) return '정밀 교란자';
   return '생존자';
@@ -93,6 +98,7 @@ function staticReport(s: RunSummary): string {
     s.result === 'WIN'
       ? `인정한다. ${s.wavesReached}개 보안 구역을 전부 돌파했다. 이번 탈출에서 보안 시야를 피해 출구를 열었고, 긴급 교란 ${s.totalKills}회와 신호 적중률 ${accuracyPct}%를 기록했다. 대시 ${s.totalDashCount}회, 판단은 나쁘지 않았다. 다음 시설은 이렇게 열어두지 않겠다.`
       : `봉쇄 완료. ${s.wavesReached}번째 보안 구역에서 탈출이 중단됐다. 긴급 교란 ${s.totalKills}회와 신호 적중률 ${accuracyPct}%를 기록했지만, 감시망을 완전히 벗어나지는 못했다. 대시 ${s.totalDashCount}회 — 다음 시도에서는 그 습관부터 봉쇄하겠다.`;
+  const style = ` 교란 입력 ${s.totalManualAttacks}회, 감시 노출 ${s.visionExposureSec.toFixed(1)}초.`;
   // 읽기 대결 결과는 승패와 별개 축이라 한 문장을 따로 붙인다. 판정이 한 번도 없었으면 생략한다
   // (잘 움직여서 읽을 습관이 없었던 런 — 그것 자체가 디렉터에게 할 말이 된다).
   const v = s.verdicts;
@@ -103,5 +109,5 @@ function staticReport(s: RunSummary): string {
       : v.player === v.director
         ? ` 패턴 읽기는 ${v.director} 대 ${v.player}, 비겼다.`
         : ` 패턴 읽기는 ${v.director} 대 ${v.player}. 나는 당신을 ${v.director}번 맞췄다.`;
-  return `${body}${read}\n칭호: ${title}`;
+  return `${body}${style}${read}\n칭호: ${title}`;
 }

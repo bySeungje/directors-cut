@@ -48,7 +48,8 @@ export interface WaveLog {
   hpLost: number;
   damageSources: Partial<Record<EnemyType, number>>;
   movement: { quadrantTime: { NW: number; NE: number; SW: number; SE: number }; wallHugRatio: number; dashCount: number; hotspotConcentration: number };
-  combat: { kills: Partial<Record<EnemyType, number>>; accuracy: number; clusterRatio: number };
+  combat: { kills: Partial<Record<EnemyType, number>>; accuracy: number; clusterRatio: number; manualAttacks?: number };
+  stealth?: { visionExposureSec: number; exitReached: boolean };
   upgrades: string[];
   prevMutations: Mutation[];
   /** 이 웨이브에서 관측된 지배적 습관. **선택 필드다** — `client.ts`의 `WARMUP_LOG`와 테스트 픽스처가
