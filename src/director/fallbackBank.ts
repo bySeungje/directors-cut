@@ -1,7 +1,9 @@
 import { Directive, Mutation } from '../contracts/directive';
 
 export const OPENING_WAVE: Directive = {
-  composition: [{ type: 'chaser', count: 8, spawn: 'RING', elite: false }],
+  // 12기 = 웨이브 1 예산 전액. 8기였을 때는 예산 하한(9)에도 못 미쳐 화면이 텅 비었는데,
+  // 하필 이 40초가 심사자가 링크를 열고 **가장 먼저 보는 화면**이다. 밸런스가 아니라 첫인상 문제였다.
+  composition: [{ type: 'chaser', count: 12, spawn: 'RING', elite: false }],
   mutation: 'NONE',
   buff: 'NONE',
   deny: 'NONE',

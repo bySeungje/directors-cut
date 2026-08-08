@@ -73,7 +73,7 @@ export class EndScene extends Phaser.Scene {
     const result = data.result;
     this.sceneData = data;
     // EndScene이 조립 — 통계 한 줄 표시와 requestReport 입력이 동일 집계(buildRunSummary)를 공유한다.
-    const summary = buildRunSummary(result, data.waveLogs, data.upgrades);
+    const summary = buildRunSummary(result, data.waveLogs, data.upgrades, data.verdictScore);
 
     this.boxGraphics = undefined; // 리스타트로 create()가 재실행돼도 이전 런의 Graphics 참조를 들고 있지 않게
 

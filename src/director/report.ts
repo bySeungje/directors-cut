@@ -13,11 +13,21 @@ export interface RunSummary {
   totalKills: number;
   avgAccuracy: number;
   totalDashCount: number;
+  /** 예측 판정 누계(디렉터 : 당신). 승패와 별개 축이다 — 지면서 이길 수 있다.
+   *  선택 필드로 둔다: 기존 호출부 8곳이 3인자로 부르고 있어 필수로 만들면 타입체크가 깨진다. */
+  verdicts?: { director: number; player: number };
+  /** 런에서 디렉터가 지목한 습관 순서. 리포트가 "무엇을 읽혔는지"를 말할 재료. */
+  habitsRead?: string[];
 }
 
 /** ArenaScene이 넘긴 원재료(result·waveLogs·upgrades)로 리포트 입력을 조립한다.
  *  EndScene의 통계 한 줄 표시와 requestReport 호출이 이 결과를 함께 쓴다(집계 로직 중복 방지). */
-export function buildRunSummary(result: 'WIN' | 'LOSE', waves: WaveLog[], upgrades: string[]): RunSummary {
+export function buildRunSummary(
+  result: 'WIN' | 'LOSE',
+  waves: WaveLog[],
+  upgrades: string[],
+  verdicts?: { director: number; player: number },
+): RunSummary {
   const totalKills = waves.reduce(
     (sum, w) => sum + Object.values(w.combat.kills).reduce((s, n) => s + (n ?? 0), 0),
     0,
@@ -25,7 +35,8 @@ export function buildRunSummary(result: 'WIN' | 'LOSE', waves: WaveLog[], upgrad
   const avgAccuracy = waves.length ? waves.reduce((s, w) => s + w.combat.accuracy, 0) / waves.length : 0;
   const totalDashCount = waves.reduce((s, w) => s + w.movement.dashCount, 0);
   const wavesReached = waves.length ? waves[waves.length - 1].wave : 0;
-  return { result, wavesReached, waves, upgrades, totalKills, avgAccuracy, totalDashCount };
+  const habitsRead = waves.map((w) => w.dominantHabit).filter((h): h is NonNullable<typeof h> => !!h);
+  return { result, wavesReached, waves, upgrades, totalKills, avgAccuracy, totalDashCount, verdicts, habitsRead };
 }
 
 /** 엔드게임 리포트 요청 — 8초 내 반드시 resolve(실패 시 정적 폴백 템플릿). */
@@ -82,5 +93,15 @@ function staticReport(s: RunSummary): string {
     s.result === 'WIN'
       ? `인정한다. ${s.wavesReached}웨이브, 전부 넘었다. 이번 판에서 ${s.totalKills}기를 처리했고 명중률은 ${accuracyPct}%였다 — 낮은 수치가 아니다. 대시 ${s.totalDashCount}회, 판단은 나쁘지 않았다. 다음 설계는 이렇게 순순히 두지 않겠다. 다시 마주치길 기다리겠다.`
       : `여기까지다. ${s.wavesReached}웨이브에서 판이 끝났다. ${s.totalKills}기를 처리하고 명중률 ${accuracyPct}%를 기록했지만, 그걸로는 부족했다. 대시 ${s.totalDashCount}회 — 아꼈어야 했는지 더 썼어야 했는지는 다음 판에서 증명해라. 편집은 여기까지, 다시 앉아라.`;
-  return `${body}\n칭호: ${title}`;
+  // 읽기 대결 결과는 승패와 별개 축이라 한 문장을 따로 붙인다. 판정이 한 번도 없었으면 생략한다
+  // (잘 움직여서 읽을 습관이 없었던 런 — 그것 자체가 디렉터에게 할 말이 된다).
+  const v = s.verdicts;
+  const read = !v || v.director + v.player === 0
+    ? ' 읽을 습관이 없었다. 그건 인정하겠다.'
+    : v.player > v.director
+      ? ` 읽기 대결은 ${v.player} 대 ${v.director}으로 내가 졌다. 습관을 버릴 줄 아는군.`
+      : v.player === v.director
+        ? ` 읽기 대결은 ${v.director} 대 ${v.player}, 비겼다.`
+        : ` 읽기 대결은 ${v.director} 대 ${v.player}. 나는 당신을 ${v.director}번 맞췄다.`;
+  return `${body}${read}\n칭호: ${title}`;
 }

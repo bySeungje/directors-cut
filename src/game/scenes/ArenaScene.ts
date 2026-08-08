@@ -114,6 +114,7 @@ export class ArenaScene extends Phaser.Scene {
   create() {
     generateTextures(this);
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
+    this.drawArenaFrame();
 
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: false });
     this.playerBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
@@ -564,6 +565,30 @@ export class ArenaScene extends Phaser.Scene {
   private clearStamp() {
     for (const o of this.stampObjects) o.destroy();
     this.stampObjects = [];
+  }
+
+  /** 아레나 경계 — 실플레이로 보니 벽이 어디인지 화면에 없어서 "허공에 뜬 도형"으로 읽혔다.
+   *  무대의 테두리이자 디렉터의 것이라는 표시라, 무채색 격자 위에 레드 코너 마크를 얹는다.
+   *  변주(용암·축소)가 이 위에 그려지도록 깊이는 바닥(-100)에 둔다. */
+  private drawArenaFrame() {
+    const { width: w, height: h } = this.scale;
+    const g = this.add.graphics().setDepth(-100);
+
+    // 바닥 격자 — 이동이 눈에 잡히게 하는 참조선. 아주 어둡게 깔아 도형과 경쟁하지 않는다.
+    g.lineStyle(1, 0x14141c, 1);
+    for (let x = 120; x < w; x += 120) g.lineBetween(x, 0, x, h);
+    for (let y = 120; y < h; y += 120) g.lineBetween(0, y, w, y);
+
+    // 경계선
+    g.lineStyle(2, 0x23232e, 1).strokeRect(1, 1, w - 2, h - 2);
+
+    // 네 모서리의 레드 마크 — 무대가 디렉터의 것임을 상시 상기시킨다(전투 화면에 레드가 하나도 없었다)
+    const L = 28;
+    g.lineStyle(2, 0xff2d2d, 0.85);
+    for (const [cx, cy, dx, dy] of [[1, 1, 1, 1], [w - 1, 1, -1, 1], [1, h - 1, 1, -1], [w - 1, h - 1, -1, -1]]) {
+      g.lineBetween(cx, cy, cx + dx * L, cy);
+      g.lineBetween(cx, cy, cx, cy + dy * L);
+    }
   }
 
   private createHud() {
