@@ -104,10 +104,12 @@ export class VaultScene extends Phaser.Scene {
     this.add.text(56, 33, `수읽기 · NAN 2026${runCount > 1 ? ` · RUN ${runCount}` : ''}`, {
       fontFamily: 'monospace', fontSize: '12px', color: DIM,
     }).setOrigin(0, 0.5);
+    // 빈 문자열이어도 배경+패딩 박스가 그려지므로 내용이 있을 때만 보이게 한다 (스모크에서 발견)
     this.reasonText = this.add
       .text(480, REASON_Y, '', { fontFamily: 'monospace', fontSize: '19px', color: INK, backgroundColor: '#16161f', padding: { x: 12, y: 8 } })
       .setOrigin(0.5)
-      .setDepth(50);
+      .setDepth(50)
+      .setVisible(false);
   }
 
   private renderEye() {
@@ -179,7 +181,7 @@ export class VaultScene extends Phaser.Scene {
     if (this.phase !== 'choosing') return;
     this.phase = 'resolving';
     playShoot();
-    this.reasonText.setText('');
+    this.reasonText.setText('').setVisible(false);
 
     const r = this.heist.playRound(door);
     const chosen = this.doors[door];
@@ -232,7 +234,7 @@ export class VaultScene extends Phaser.Scene {
       .setAlpha(0);
     this.tweens.add({ targets: stamp, alpha: 1, scale: 1, duration: 140, ease: 'Back.easeOut' });
     this.tweens.add({ targets: stamp, alpha: 0, delay: 1150, duration: 220, onComplete: () => stamp.destroy() });
-    if (reason) this.reasonText.setText(reason);
+    if (reason) this.reasonText.setText(reason).setVisible(true);
     if (forfeited > 0) this.floatText(480, VERDICT_Y + 62, `-${forfeited} 몰수`, RED, 22);
   }
 
