@@ -39,7 +39,16 @@ const SETTLE_Y = 552;
 const RESOLVE_PASS_MS = 850;
 const RESOLVE_CAUGHT_MS = 1500; // 근거를 읽을 시간 — 영상 가독 기준
 
-type Phase = 'choosing' | 'resolving' | 'session' | 'over';
+type Phase = 'intro' | 'choosing' | 'resolving' | 'session' | 'over';
+
+// 첫 판 인트로 (승제 실플레이 피드백: "뭘 하는지 모르겠다" — 스토리로 역할·목표·규칙을 준다)
+// 경비의 목소리·클릭 진행·재도전(runCount>1)은 생략. 판 시작 전 15초 안에 끝난다.
+const INTRO_BEATS: readonly string[] = [
+  '어서 와, 도둑.\n여기는 내가 지키는 이중 금고다.',
+  '네 목표 — 12라운드 안에\n1,000을 챙겨서 걸어 나가는 것.',
+  '매 라운드, 두 금고 중 하나에만 내 덫이 있다.\n나는 네 선택 버릇을 읽고 덫을 옮긴다.',
+  '연속으로 열수록 한 탕이 커진다. 단 —\n[정산] 전엔 네 돈이 아니다. 잡히면 전부 몰수.',
+];
 
 export class VaultScene extends Phaser.Scene {
   private heist!: Heist;
@@ -59,6 +68,7 @@ export class VaultScene extends Phaser.Scene {
   private logPanel?: Phaser.GameObjects.Text;
   private lastDirective: SessionDirective | null = null;
   private lastFromLLM = false;
+  private settleHintShown = false;
 
   constructor() {
     super('VaultScene');
@@ -80,10 +90,66 @@ export class VaultScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-M', () => toggleMute());
     this.input.keyboard!.on('keydown-D', () => this.toggleDirectorLog());
 
-    this.setDialogue(
-      runCount > 1 ? `다시 왔군. 네 버릇 장부는 그대로다. (${runCount}번째)` : '지금부터 당신을 관찰한다.',
-    );
+    if (runCount > 1) {
+      this.setDialogue(`다시 왔군. 네 버릇 장부는 그대로다. (${runCount}번째)`);
+    } else {
+      this.runIntro();
+    }
     this.refreshHud();
+  }
+
+  /** 첫 판 인트로 — 비트별 타이핑, 클릭으로 스킵/진행 */
+  private runIntro() {
+    this.phase = 'intro';
+    const panel = this.add.container(480, 330).setDepth(70);
+    const box = this.add.rectangle(0, 0, 640, 170, BOARD_NUM, 0.97).setStrokeStyle(2, RED_NUM);
+    const header = this.add.text(-300, -66, 'AI 경비', { fontFamily: 'monospace', fontSize: '12px', color: RED, letterSpacing: 2 });
+    const body = this.add.text(-300, -34, '', { fontFamily: 'monospace', fontSize: '18px', color: INK, wordWrap: { width: 600 }, lineSpacing: 10 });
+    const hint = this.add.text(296, 62, '클릭 ▸', { fontFamily: 'monospace', fontSize: '12px', color: DIM }).setOrigin(1);
+    this.tweens.add({ targets: hint, alpha: 0.25, duration: 500, yoyo: true, repeat: -1 });
+    panel.add([box, header, body, hint]);
+
+    let beat = 0;
+    let shown = 0;
+    let timer: Phaser.Time.TimerEvent | null = null;
+
+    const typeBeat = () => {
+      const full = INTRO_BEATS[beat];
+      shown = 0;
+      hint.setText(beat < INTRO_BEATS.length - 1 ? '클릭 ▸' : '클릭해서 시작 ▸');
+      timer = this.time.addEvent({
+        delay: 14,
+        repeat: full.length - 1,
+        callback: () => {
+          shown++;
+          body.setText(full.slice(0, shown) + (shown < full.length ? '▍' : ''));
+        },
+      });
+    };
+
+    const finish = () => {
+      this.input.off('pointerdown', onClick);
+      panel.destroy();
+      this.phase = 'choosing';
+      this.setDialogue('지금부터 당신을 관찰한다.');
+      this.refreshHud();
+    };
+
+    const onClick = () => {
+      const full = INTRO_BEATS[beat];
+      if (shown < full.length) {
+        if (timer) this.time.removeEvent(timer);
+        shown = full.length;
+        body.setText(full);
+        return;
+      }
+      beat++;
+      if (beat >= INTRO_BEATS.length) finish();
+      else typeBeat();
+    };
+
+    this.input.on('pointerdown', onClick);
+    typeBeat();
   }
 
   update() {
@@ -271,6 +337,12 @@ export class VaultScene extends Phaser.Scene {
       return;
     }
     this.phase = 'choosing';
+    // 정산 힌트 1회 (인트로 규칙의 실전 리마인드 — 첫 판에서 판이 처음 커졌을 때)
+    if (!this.settleHintShown && s.unsettled >= 300 && this.heist.runCount === 1) {
+      this.settleHintShown = true;
+      this.setDialogue('그 돈, [정산] 전엔 네 것이 아니다.');
+      this.tweens.add({ targets: [this.settleBtn, this.settleLabel], scaleX: 1.06, scaleY: 1.06, duration: 220, yoyo: true, repeat: 2 });
+    }
     this.refreshHud();
   }
 

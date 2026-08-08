@@ -37,7 +37,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 104, '금고 2개, 덫은 1개 — AI는 네 선택 패턴을 읽는다\n스트릭으로 판돈을 불리고, 털리기 전에 [정산]으로 챙겨라', {
+      .text(width / 2, height / 2 + 104, 'AI 경비가 지키는 이중 금고 — 놈은 네 선택 패턴을 읽는다\n12라운드 안에 1,000을 털어서 걸어 나가라', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 6,
       })
       .setOrigin(0.5);
