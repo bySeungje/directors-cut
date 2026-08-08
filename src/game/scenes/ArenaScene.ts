@@ -9,6 +9,7 @@ import {
 import {
   Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures, preloadEntityTextures,
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
+  type EnemyBehaviorContext,
 } from '../entities';
 import { runDirective } from '../waveRunner';
 import { clearMutation, updateMutation } from '../mutations';
@@ -62,6 +63,7 @@ interface SectorLayout {
   start: { x: number; y: number };
   exit: { x: number; y: number };
   walls: WallSpec[];
+  patrols: { x: number; y: number }[][];
 }
 
 const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
@@ -73,6 +75,11 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 565, y: 250, w: 28, h: 260 },
       { x: 720, y: 390, w: 240, h: 28 },
     ],
+    patrols: [
+      [{ x: 150, y: 505 }, { x: 380, y: 505 }, { x: 380, y: 350 }],
+      [{ x: 625, y: 112 }, { x: 835, y: 112 }, { x: 835, y: 325 }],
+      [{ x: 130, y: 145 }, { x: 445, y: 145 }, { x: 445, y: 310 }],
+    ],
   },
   2: {
     start: { x: 92, y: 92 },
@@ -81,6 +88,11 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 260, y: 220, w: 28, h: 250 },
       { x: 454, y: 398, w: 260, h: 28 },
       { x: 688, y: 212, w: 28, h: 250 },
+    ],
+    patrols: [
+      [{ x: 126, y: 126 }, { x: 212, y: 480 }],
+      [{ x: 344, y: 120 }, { x: 610, y: 120 }, { x: 610, y: 330 }],
+      [{ x: 760, y: 180 }, { x: 842, y: 502 }],
     ],
   },
   3: {
@@ -92,6 +104,11 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 672, y: 386, w: 28, h: 300 },
       { x: 730, y: 270, w: 240, h: 28 },
     ],
+    patrols: [
+      [{ x: 120, y: 520 }, { x: 188, y: 146 }],
+      [{ x: 338, y: 238 }, { x: 602, y: 238 }],
+      [{ x: 760, y: 390 }, { x: 860, y: 530 }],
+    ],
   },
   4: {
     start: { x: 480, y: 548 },
@@ -101,6 +118,11 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 754, y: 250, w: 280, h: 28 },
       { x: 320, y: 420, w: 28, h: 190 },
       { x: 640, y: 420, w: 28, h: 190 },
+    ],
+    patrols: [
+      [{ x: 480, y: 506 }, { x: 480, y: 332 }, { x: 222, y: 332 }],
+      [{ x: 480, y: 506 }, { x: 480, y: 332 }, { x: 738, y: 332 }],
+      [{ x: 212, y: 110 }, { x: 748, y: 110 }],
     ],
   },
   5: {
@@ -113,6 +135,12 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 718, y: 142, w: 28, h: 230 },
       { x: 718, y: 506, w: 28, h: 190 },
     ],
+    patrols: [
+      [{ x: 122, y: 322 }, { x: 238, y: 322 }],
+      [{ x: 376, y: 154 }, { x: 640, y: 154 }],
+      [{ x: 376, y: 502 }, { x: 640, y: 502 }],
+      [{ x: 774, y: 322 }, { x: 868, y: 322 }],
+    ],
   },
   6: {
     start: { x: 92, y: 548 },
@@ -124,6 +152,12 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 632, y: 292, w: 300, h: 28 },
       { x: 776, y: 458, w: 28, h: 210 },
     ],
+    patrols: [
+      [{ x: 102, y: 548 }, { x: 154, y: 112 }],
+      [{ x: 280, y: 214 }, { x: 552, y: 214 }],
+      [{ x: 504, y: 514 }, { x: 704, y: 514 }],
+      [{ x: 838, y: 120 }, { x: 838, y: 398 }],
+    ],
   },
   7: {
     start: { x: 480, y: 560 },
@@ -134,6 +168,12 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 204, y: 426, w: 260, h: 28 },
       { x: 756, y: 426, w: 260, h: 28 },
       { x: 480, y: 322, w: 30, h: 290 },
+    ],
+    patrols: [
+      [{ x: 480, y: 552 }, { x: 306, y: 516 }, { x: 306, y: 326 }],
+      [{ x: 480, y: 552 }, { x: 654, y: 516 }, { x: 654, y: 326 }],
+      [{ x: 306, y: 136 }, { x: 654, y: 136 }],
+      [{ x: 142, y: 326 }, { x: 818, y: 326 }],
     ],
   },
 };
@@ -250,6 +290,7 @@ export class ArenaScene extends Phaser.Scene {
   private stageRule: StageRule = 'NONE';
   private stageObjects: Phaser.GameObjects.GameObject[] = [];
   private wallObjects: Phaser.GameObjects.GameObject[] = [];
+  private patrolAssignSeq = 0;
   private stageRuleDamageAcc = 0;
   private spotlightHoldSec = 0;
   private spotlight!: Phaser.GameObjects.Graphics;
@@ -329,6 +370,7 @@ export class ArenaScene extends Phaser.Scene {
     this.stageRule = 'NONE';
     this.stageObjects = [];
     this.wallObjects = [];
+    this.patrolAssignSeq = 0;
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
     this.detectionLevel = 0;
@@ -381,9 +423,12 @@ export class ArenaScene extends Phaser.Scene {
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     const enemyList = this.enemies.getChildren() as Enemy[];
+    const behaviorContext: EnemyBehaviorContext = {
+      canSeePlayer: (enemy, range, fov) => this.enemyHasPlayerLineOfSight(enemy, range, fov),
+    };
     for (const enemy of enemyList) {
       if (!enemy.active) continue;
-      enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet);
+      enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet, behaviorContext);
     }
 
     this.updateStealthSystems(dt);
@@ -422,6 +467,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!e) return null;
     e.setPosition(x, y);
     e.spawn(type, elite);
+    e.setPatrolRoute(this.patrolRouteFor(type, x, y));
     return e;
   }
 
@@ -613,6 +659,59 @@ export class ArenaScene extends Phaser.Scene {
     return SECTOR_LAYOUTS[this.currentWave] ?? SECTOR_LAYOUTS[FINAL_WAVE];
   }
 
+  private patrolRouteFor(type: EnemyType, x: number, y: number): { x: number; y: number }[] {
+    const layout = this.sectorLayout();
+    if (layout.patrols.length === 0) return [layout.exit];
+
+    const preferred = type === 'shooter' ? 1 : type === 'splitter' ? 2 : 0;
+    const route = layout.patrols[(this.patrolAssignSeq + preferred) % layout.patrols.length];
+    this.patrolAssignSeq++;
+    const start = this.nearestPassablePoint(x, y, route[0] ?? layout.start);
+    return [start, ...route];
+  }
+
+  private nearestPassablePoint(x: number, y: number, fallback: { x: number; y: number }): { x: number; y: number } {
+    const clamped = {
+      x: Phaser.Math.Clamp(x, 48, this.scale.width - 48),
+      y: Phaser.Math.Clamp(y, 48, this.scale.height - 48),
+    };
+    return this.pointInsideWall(clamped.x, clamped.y) ? fallback : clamped;
+  }
+
+  private enemyHasPlayerLineOfSight(enemy: Enemy, range: number, fov: number): boolean {
+    const dx = this.player.x - enemy.x;
+    const dy = this.player.y - enemy.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > range) return false;
+    const angle = Math.atan2(dy, dx);
+    if (Math.abs(Phaser.Math.Angle.Wrap(angle - enemy.rotation)) > fov / 2) return false;
+    return !this.segmentHitsWall(enemy.x, enemy.y, this.player.x, this.player.y);
+  }
+
+  private pointInsideWall(x: number, y: number): boolean {
+    return this.sectorLayout().walls.some((wall) => this.wallRect(wall).contains(x, y));
+  }
+
+  private segmentHitsWall(x1: number, y1: number, x2: number, y2: number): boolean {
+    const line = new Phaser.Geom.Line(x1, y1, x2, y2);
+    return this.sectorLayout().walls.some((wall) => Phaser.Geom.Intersects.LineToRectangle(line, this.wallRect(wall)));
+  }
+
+  private rayEndBeforeWall(x: number, y: number, angle: number, range: number): { x: number; y: number } {
+    const step = 12;
+    let last = { x, y };
+    for (let d = step; d <= range; d += step) {
+      const p = { x: x + Math.cos(angle) * d, y: y + Math.sin(angle) * d };
+      if (this.pointInsideWall(p.x, p.y)) return last;
+      last = p;
+    }
+    return { x: x + Math.cos(angle) * range, y: y + Math.sin(angle) * range };
+  }
+
+  private wallRect(wall: WallSpec): Phaser.Geom.Rectangle {
+    return new Phaser.Geom.Rectangle(wall.x - wall.w / 2, wall.y - wall.h / 2, wall.w, wall.h);
+  }
+
   private setupSectorMap() {
     const layout = this.sectorLayout();
     this.player.setPosition(layout.start.x, layout.start.y);
@@ -802,15 +901,13 @@ export class ArenaScene extends Phaser.Scene {
       if (seen) spottedBy = spottedBy ?? enemy;
       const color = seen ? 0xff2d2d : spec.color;
       const alpha = seen ? 0.23 : spec.alpha;
-      const x1 = enemy.x + Math.cos(left) * spec.range;
-      const y1 = enemy.y + Math.sin(left) * spec.range;
-      const x2 = enemy.x + Math.cos(right) * spec.range;
-      const y2 = enemy.y + Math.sin(right) * spec.range;
+      const p1 = this.rayEndBeforeWall(enemy.x, enemy.y, left, spec.range);
+      const p2 = this.rayEndBeforeWall(enemy.x, enemy.y, right, spec.range);
       this.visionGraphics.fillStyle(color, alpha);
-      this.visionGraphics.fillTriangle(enemy.x, enemy.y, x1, y1, x2, y2);
+      this.visionGraphics.fillTriangle(enemy.x, enemy.y, p1.x, p1.y, p2.x, p2.y);
       this.visionGraphics.lineStyle(1, color, seen ? 0.72 : 0.28);
-      this.visionGraphics.lineBetween(enemy.x, enemy.y, x1, y1);
-      this.visionGraphics.lineBetween(enemy.x, enemy.y, x2, y2);
+      this.visionGraphics.lineBetween(enemy.x, enemy.y, p1.x, p1.y);
+      this.visionGraphics.lineBetween(enemy.x, enemy.y, p2.x, p2.y);
     }
     return spottedBy;
   }
@@ -833,7 +930,8 @@ export class ArenaScene extends Phaser.Scene {
     const dist = Math.hypot(dx, dy);
     if (dist > range) return false;
     const angle = Math.atan2(dy, dx);
-    return Math.abs(Phaser.Math.Angle.Wrap(angle - enemy.rotation)) <= fov / 2;
+    if (Math.abs(Phaser.Math.Angle.Wrap(angle - enemy.rotation)) > fov / 2) return false;
+    return !this.segmentHitsWall(enemy.x, enemy.y, this.player.x, this.player.y);
   }
 
   private updateSpotlight(dt: number) {

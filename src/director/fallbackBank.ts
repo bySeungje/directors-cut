@@ -2,9 +2,8 @@ import { Directive, Mutation, WaveLog } from '../contracts/directive';
 import { fillToBudgetFloor } from './validator';
 
 export const OPENING_WAVE: Directive = {
-  // 12기 = 웨이브 1 예산 전액. 8기였을 때는 예산 하한(9)에도 못 미쳐 화면이 텅 비었는데,
-  // 하필 이 40초가 심사자가 링크를 열고 **가장 먼저 보는 화면**이다. 밸런스가 아니라 첫인상 문제였다.
-  composition: [{ type: 'chaser', count: 12, spawn: 'RING', elite: false }],
+  // 맵 기반 전환 후 첫 구역은 물량보다 순찰 리듬을 읽게 한다.
+  composition: [{ type: 'chaser', count: 7, spawn: 'RING', elite: false }],
   mutation: 'NONE',
   buff: 'NONE',
   deny: 'NONE',
@@ -15,34 +14,34 @@ export const OPENING_WAVE: Directive = {
 // export 심볼은 OPENING_WAVE 하나로 통일한다 (별칭 export 금지)
 const BANK: Record<number, Directive[]> = {
   2: [
-    { composition: [{ type: 'chaser', count: 10, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 2, spawn: 'N', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '1차 문은 닫혔다. 협공 프로토콜을 개방한다.', intent: '탐조등 구역: 협공 도입' },
-    { composition: [{ type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 3, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '어둠 속 탈출 루트는 이미 폐쇄했다.', intent: '탐조등 구역: 시야 제한 테스트' },
-    { composition: [{ type: 'splitter', count: 6, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '하나를 부수면 둘이 감시한다.', intent: '탐조등 구역: 분열형 도입' },
+    { composition: [{ type: 'chaser', count: 6, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 2, spawn: 'N', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '1차 문은 닫혔다. 협공 프로토콜을 개방한다.', intent: '탐조등 구역: 순찰 협공 도입' },
+    { composition: [{ type: 'chaser', count: 5, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 3, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '어둠 속 탈출 루트는 이미 폐쇄했다.', intent: '탐조등 구역: 시야 제한 테스트' },
+    { composition: [{ type: 'splitter', count: 5, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '하나를 부수면 둘이 감시한다.', intent: '탐조등 구역: 분열형 릴레이 도입' },
   ],
   3: [
-    { composition: [{ type: 'chaser', count: 12, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '왼쪽은 이제 내 구역이다.', intent: '공간 압박' },
-    { composition: [{ type: 'splitter', count: 8, spawn: 'PINCER', elite: false }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '속도를 올려보지.', intent: '템포 상승' },
-    { composition: [{ type: 'chaser', count: 6, spawn: 'RING', elite: true }], mutation: 'SPAWN_STORM', buff: 'NONE', deny: 'NONE', taunt: '정예를 보낸다. 영광으로 알아라.', intent: '엘리트 도입' },
+    { composition: [{ type: 'chaser', count: 7, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '왼쪽은 이제 내 구역이다.', intent: '공간 압박' },
+    { composition: [{ type: 'splitter', count: 7, spawn: 'PINCER', elite: false }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '속도를 올려보지.', intent: '릴레이 순찰 템포 상승' },
+    { composition: [{ type: 'chaser', count: 3, spawn: 'RING', elite: true }], mutation: 'SPAWN_STORM', buff: 'NONE', deny: 'NONE', taunt: '정예를 보낸다. 영광으로 알아라.', intent: '엘리트 경비 도입' },
   ],
   4: [
-    { composition: [{ type: 'shooter', count: 6, spawn: 'RING', elite: false }, { type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '보안 구역을 압축한다. 도망칠 곳도 줄어든다.', intent: '공간 축소 압박' },
-    { composition: [{ type: 'splitter', count: 8, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '보이지 않는 것이 가장 무섭다.', intent: '시야+물량 복합' },
-    { composition: [{ type: 'chaser', count: 16, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 4, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '물량 앞에 장사 없다.', intent: '물량전' },
+    { composition: [{ type: 'shooter', count: 5, spawn: 'RING', elite: false }, { type: 'chaser', count: 6, spawn: 'BEHIND', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '보안 구역을 압축한다. 도망칠 곳도 줄어든다.', intent: '공간 축소 압박' },
+    { composition: [{ type: 'splitter', count: 6, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '보이지 않는 것이 가장 무섭다.', intent: '시야+릴레이 복합' },
+    { composition: [{ type: 'chaser', count: 8, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 5, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '복도마다 눈을 배치했다.', intent: '순찰 밀도 상승' },
   ],
   5: [
-    { composition: [{ type: 'chaser', count: 18, spawn: 'RING', elite: false }, { type: 'splitter', count: 8, spawn: 'PINCER', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '끝없이 몰아친다. 버텨봐라.', intent: '지속 압박' },
-    { composition: [{ type: 'shooter', count: 4, spawn: 'RING', elite: true }, { type: 'chaser', count: 10, spawn: 'BEHIND', elite: false }], mutation: 'LAVA_RIGHT', buff: 'NONE', deny: 'NONE', taunt: '오른쪽을 지운다.', intent: '엘리트 감시 드론 + 공간 압박' },
-    { composition: [{ type: 'chaser', count: 20, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 7, spawn: 'N', elite: false }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '이 속도를 따라올 수 있나.', intent: '고속 혼전' },
+    { composition: [{ type: 'chaser', count: 8, spawn: 'RING', elite: false }, { type: 'splitter', count: 7, spawn: 'PINCER', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '반복 루트는 오래 살아남지 못한다.', intent: '지속 순찰 압박' },
+    { composition: [{ type: 'shooter', count: 3, spawn: 'RING', elite: true }, { type: 'chaser', count: 7, spawn: 'BEHIND', elite: false }], mutation: 'LAVA_RIGHT', buff: 'NONE', deny: 'NONE', taunt: '오른쪽을 지운다.', intent: '엘리트 감시 드론 + 공간 압박' },
+    { composition: [{ type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 6, spawn: 'N', elite: false }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '이 속도를 따라올 수 있나.', intent: '고속 순찰망' },
   ],
   6: [
-    { composition: [{ type: 'splitter', count: 10, spawn: 'RING', elite: false }, { type: 'chaser', count: 16, spawn: 'PINCER', elite: false }, { type: 'chaser', count: 20, spawn: 'N', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '어둠, 분열, 협공. 전부 동시에.', intent: '복합 시험' },
-    { composition: [{ type: 'shooter', count: 10, spawn: 'RING', elite: false }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'chaser', count: 6, spawn: 'S', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '숨을 곳은 없다.', intent: '탄막+축소' },
-    { composition: [{ type: 'chaser', count: 25, spawn: 'N', elite: false }, { type: 'chaser', count: 25, spawn: 'S', elite: false }, { type: 'chaser', count: 2, spawn: 'RING', elite: true }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '최정예다. 물러설 곳도 없다.', intent: '엘리트 물량' },
+    { composition: [{ type: 'splitter', count: 8, spawn: 'RING', elite: false }, { type: 'chaser', count: 9, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 4, spawn: 'N', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '어둠, 릴레이, 협공. 전부 동시에.', intent: '복합 시험' },
+    { composition: [{ type: 'shooter', count: 8, spawn: 'RING', elite: false }, { type: 'chaser', count: 10, spawn: 'BEHIND', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '숨을 곳은 없다.', intent: '감시망+축소' },
+    { composition: [{ type: 'chaser', count: 9, spawn: 'N', elite: false }, { type: 'chaser', count: 9, spawn: 'S', elite: false }, { type: 'chaser', count: 2, spawn: 'RING', elite: true }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '최정예다. 물러설 곳도 없다.', intent: '엘리트 순찰 압박' },
   ],
   7: [
-    { composition: [{ type: 'chaser', count: 30, spawn: 'RING', elite: false }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 12, spawn: 'PINCER', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '마지막 봉쇄다. 모든 시야를 열어라.', intent: '피날레: 전면 감시망' },
-    { composition: [{ type: 'splitter', count: 21, spawn: 'PINCER', elite: false }, { type: 'splitter', count: 21, spawn: 'RING', elite: false }], mutation: 'LAVA_HOTSPOT', buff: 'NONE', deny: 'NONE', taunt: '네가 믿은 경로를 봉쇄한다.', intent: '피날레: 분열 폭풍' },
-    { composition: [{ type: 'shooter', count: 4, spawn: 'RING', elite: true }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'chaser', count: 30, spawn: 'N', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '엔딩은 어둠 속에서.', intent: '피날레: 암전 총공세' },
+    { composition: [{ type: 'chaser', count: 12, spawn: 'RING', elite: false }, { type: 'shooter', count: 8, spawn: 'PINCER', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '마지막 봉쇄다. 모든 시야를 열어라.', intent: '피날레: 전면 감시망' },
+    { composition: [{ type: 'splitter', count: 9, spawn: 'PINCER', elite: false }, { type: 'splitter', count: 9, spawn: 'RING', elite: false }], mutation: 'LAVA_HOTSPOT', buff: 'NONE', deny: 'NONE', taunt: '네가 믿은 경로를 봉쇄한다.', intent: '피날레: 릴레이 봉쇄' },
+    { composition: [{ type: 'shooter', count: 3, spawn: 'RING', elite: true }, { type: 'chaser', count: 11, spawn: 'BEHIND', elite: false }, { type: 'chaser', count: 8, spawn: 'N', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '엔딩은 어둠 속에서.', intent: '피날레: 암전 봉쇄' },
   ],
 };
 
