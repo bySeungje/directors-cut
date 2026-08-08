@@ -30,17 +30,17 @@ export class TitleScene extends Phaser.Scene {
     this.renderDirectorBadge();
 
     this.add
-      .text(width / 2, height / 2 - 10, 'AI 감독이 촬영 규칙을 바꿔버리는 생존 액션', {
+      .text(width / 2, height / 2 - 10, 'AI 감옥장이 탈출 습관을 학습해 다음 구역을 재설계하는 액션', {
         fontFamily: 'monospace', fontSize: '18px', color: '#ff2d2d',
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 48, '클릭해서 TAKE 01 시작', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec', fontStyle: 'bold' })
+      .text(width / 2, height / 2 + 48, '클릭해서 SECTOR 01 탈출', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec', fontStyle: 'bold' })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 자동 사격\n벽을 믿지 마라. 같은 동선을 반복하면 감독이 다음 컷에서 그 습관을 겨냥한다.', {
+      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 자동 사격\n벽을 믿지 마라. 같은 탈출 루트를 반복하면 DIRECTOR가 다음 구역을 네 약점으로 바꾼다.', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
       })
       .setOrigin(0.5);
@@ -85,7 +85,7 @@ export class TitleScene extends Phaser.Scene {
     g.lineBetween(width - 76, height - 82, width - 76, height - 134);
 
     this.add
-      .text(width / 2, 112, 'LIVE SET / CAMERA A / NO SECOND TAKE', {
+      .text(width / 2, 112, 'AI PRISON / BLOCK A / NO SAFE ROUTE', {
         fontFamily: 'monospace', fontSize: '12px', color: '#7a7a88', letterSpacing: 2,
       })
       .setOrigin(0.5);

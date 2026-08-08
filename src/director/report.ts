@@ -91,17 +91,17 @@ function staticReport(s: RunSummary): string {
   const title = pickFallbackTitle(s);
   const body =
     s.result === 'WIN'
-      ? `인정한다. ${s.wavesReached}웨이브, 전부 넘었다. 이번 판에서 ${s.totalKills}기를 처리했고 명중률은 ${accuracyPct}%였다 — 낮은 수치가 아니다. 대시 ${s.totalDashCount}회, 판단은 나쁘지 않았다. 다음 설계는 이렇게 순순히 두지 않겠다. 다시 마주치길 기다리겠다.`
-      : `여기까지다. ${s.wavesReached}웨이브에서 판이 끝났다. ${s.totalKills}기를 처리하고 명중률 ${accuracyPct}%를 기록했지만, 그걸로는 부족했다. 대시 ${s.totalDashCount}회 — 아꼈어야 했는지 더 썼어야 했는지는 다음 판에서 증명해라. 편집은 여기까지, 다시 앉아라.`;
+      ? `인정한다. ${s.wavesReached}개 보안 구역을 전부 돌파했다. 이번 탈출에서 ${s.totalKills}기를 처리했고 명중률은 ${accuracyPct}%였다. 대시 ${s.totalDashCount}회, 판단은 나쁘지 않았다. 다음 시설은 이렇게 열어두지 않겠다.`
+      : `봉쇄 완료. ${s.wavesReached}번째 보안 구역에서 탈출이 중단됐다. ${s.totalKills}기를 처리하고 명중률 ${accuracyPct}%를 기록했지만, 중앙 통제실에는 닿지 못했다. 대시 ${s.totalDashCount}회 — 다음 시도에서는 그 습관부터 봉쇄하겠다.`;
   // 읽기 대결 결과는 승패와 별개 축이라 한 문장을 따로 붙인다. 판정이 한 번도 없었으면 생략한다
   // (잘 움직여서 읽을 습관이 없었던 런 — 그것 자체가 디렉터에게 할 말이 된다).
   const v = s.verdicts;
   const read = !v || v.director + v.player === 0
-    ? ' 읽을 습관이 없었다. 그건 인정하겠다.'
+    ? ' 읽을 탈출 습관이 없었다. 그건 인정하겠다.'
     : v.player > v.director
-      ? ` 읽기 대결은 ${v.player} 대 ${v.director}으로 내가 졌다. 습관을 버릴 줄 아는군.`
+      ? ` 패턴 읽기는 ${v.player} 대 ${v.director}으로 내가 졌다. 습관을 버릴 줄 아는 탈옥자로군.`
       : v.player === v.director
-        ? ` 읽기 대결은 ${v.director} 대 ${v.player}, 비겼다.`
-        : ` 읽기 대결은 ${v.director} 대 ${v.player}. 나는 당신을 ${v.director}번 맞췄다.`;
+        ? ` 패턴 읽기는 ${v.director} 대 ${v.player}, 비겼다.`
+        : ` 패턴 읽기는 ${v.director} 대 ${v.player}. 나는 당신을 ${v.director}번 맞췄다.`;
   return `${body}${read}\n칭호: ${title}`;
 }

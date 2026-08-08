@@ -55,7 +55,7 @@ const REPORT_CHAR_MS = 16; // taunt(interval.ts, 30ms)보다 훨씬 긴 본문�
 const MAX_BODY_CHARS = 460; // LLM 장문 응답으로부터 박스 높이를 예측 가능한 범위로 방어(스펙 "400자 내외" + 여유)
 const CURSOR_CHAR = '▍';
 const LOADING_TEXT = '리포트 수신 중…';
-const FLAVOR_TEXT = '디렉터는 이 판을 기억하지 않는다. 매 판이 새로운 연출이다.';
+const FLAVOR_TEXT = 'DIRECTOR는 같은 탈출 루트를 두 번 허용하지 않는다.';
 
 const DEPTH_UI = 100;
 
@@ -84,7 +84,7 @@ export class EndScene extends Phaser.Scene {
 
     this.renderHeader(result, summary);
     const { bodyText, badgeLabel } = this.renderReportChrome();
-    badgeLabel.setText('FINAL REPORT');
+    badgeLabel.setText('WARDEN REPORT');
 
     let reportArrived = false;
     let typingSettled = false;
@@ -196,7 +196,7 @@ export class EndScene extends Phaser.Scene {
         .setDepth(DEPTH_UI);
     }
 
-    const headline = result === 'WIN' ? '디렉터 격파' : '편집당했다';
+    const headline = result === 'WIN' ? '중앙 통제실 탈출' : '봉쇄됐다';
     this.add
       .text(width / 2, HEADLINE_Y, headline, { fontFamily: 'monospace', fontSize: `${HEADLINE_FONT_SIZE}px`, color: INK_HEX, fontStyle: 'bold' })
       .setOrigin(0.5)
@@ -209,7 +209,7 @@ export class EndScene extends Phaser.Scene {
     this.add
       .text(
         width / 2, STAT_Y,
-        `${summary.wavesReached} WAVES · 처치 ${summary.totalKills} · 명중률 ${accuracyPct}% · 대시 ${summary.totalDashCount}회`,
+        `${summary.wavesReached} SECTORS · 처치 ${summary.totalKills} · 명중률 ${accuracyPct}% · 대시 ${summary.totalDashCount}회`,
         { fontFamily: 'monospace', fontSize: '15px', color: DIM_HEX },
       )
       .setOrigin(0.5)
@@ -219,7 +219,7 @@ export class EndScene extends Phaser.Scene {
     const s = this.sceneData?.verdictScore;
     if (s && s.director + s.player > 0) {
       this.add
-        .text(width / 2, STAT_Y + 24, `읽기 대결  디렉터 ${s.director}  :  당신 ${s.player}`, {
+        .text(width / 2, STAT_Y + 24, `패턴 읽기  DIRECTOR ${s.director}  :  탈옥자 ${s.player}`, {
           fontFamily: 'monospace', fontSize: '15px',
           color: s.player > s.director ? INK_HEX : RED_HEX,
         })

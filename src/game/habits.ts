@@ -124,4 +124,4 @@ export function meterFill(habit: HabitId, r: HabitReading): number {
   return Math.max(0, Math.min(1.2, def.read(r) / def.threshold));
 }
 
-export const VOID_REASON = '무대가 바뀌었다';
+export const VOID_REASON = '구역이 재설계됐다';

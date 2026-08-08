@@ -44,57 +44,57 @@ const CAMERA_FRAME_MARGIN_X = 120;
 const CAMERA_FRAME_MARGIN_Y = 82;
 const PRIORITY_TARGET_COUNT = 3;
 
-type StageRule = 'NONE' | 'SPOTLIGHT' | 'CAMERA_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_CONFESSION' | 'FINAL_BOSS';
+type StageRule = 'NONE' | 'SEARCHLIGHT' | 'SURVEILLANCE_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_LOCKDOWN' | 'FINAL_CORE';
 
-interface TakeStory {
+interface SectorStory {
   title: string;
   objective: string;
   directorLine: string;
   rule: StageRule;
 }
 
-const TAKE_STORIES: Record<number, TakeStory> = {
+const SECTOR_STORIES: Record<number, SectorStory> = {
   1: {
-    title: 'SCENE 01 · 침입 리허설',
-    objective: '기본 동선을 들키지 않고 첫 보안팀을 정리',
-    directorLine: '좋아. 아직은 네가 어떤 배우인지 보는 리허설이다.',
+    title: 'BLOCK 01 · 수감동 이탈',
+    objective: '기본 탈출 동선을 확보하고 첫 경비 로봇을 정리',
+    directorLine: '수감자 734, 탈출 시도 확인. 행동 패턴 기록을 시작한다.',
     rule: 'NONE',
   },
   2: {
-    title: 'SCENE 02 · 조명 밖은 NG',
-    objective: `스포트라이트 안에서 ${SPOTLIGHT_HOLD_SEC}초 버티고 적을 정리`,
-    directorLine: '빛 안으로 들어와라. 관객은 도망치는 뒷모습을 좋아하지 않아.',
-    rule: 'SPOTLIGHT',
+    title: 'BLOCK 02 · 탐조등 구역',
+    objective: `탐조등 안에서 ${SPOTLIGHT_HOLD_SEC}초 누적 버티고 경비를 정리`,
+    directorLine: '어둠은 출구가 아니다. 빛 안에서 움직여라.',
+    rule: 'SEARCHLIGHT',
   },
   3: {
-    title: 'SCENE 03 · 카메라 프레임',
-    objective: '카메라 프레임 밖으로 오래 벗어나지 않기',
-    directorLine: '프레임 밖의 배우는 존재하지 않는다.',
-    rule: 'CAMERA_FRAME',
+    title: 'BLOCK 03 · 감시 프레임',
+    objective: '감시 프레임 밖으로 오래 벗어나지 않기',
+    directorLine: '시야 밖 탈출 루트는 폐쇄한다.',
+    rule: 'SURVEILLANCE_FRAME',
   },
   4: {
-    title: 'SCENE 04 · 주연 타깃',
-    objective: '레드 타깃 보안요원을 먼저 제거',
-    directorLine: '이번 컷의 주연은 네가 아니다. 저 타깃들을 먼저 지워라.',
+    title: 'BLOCK 04 · 락다운 릴레이',
+    objective: '레드 타깃 락다운 유닛을 먼저 제거',
+    directorLine: '문을 열고 싶다면 릴레이부터 끊어라.',
     rule: 'PRIORITY_TARGETS',
   },
   5: {
-    title: 'SCENE 05 · 동선 고백',
-    objective: 'AI가 읽은 습관 지대를 피하며 생존',
-    directorLine: '네가 사랑한 동선에 불을 붙였다. 이제 다른 연기를 해봐.',
-    rule: 'HOTSPOT_CONFESSION',
+    title: 'BLOCK 05 · 루트 소각',
+    objective: 'DIRECTOR가 읽은 반복 동선을 피하며 생존',
+    directorLine: '네가 반복한 경로를 전기 바닥으로 바꿨다.',
+    rule: 'HOTSPOT_LOCKDOWN',
   },
   6: {
-    title: 'SCENE 06 · 원테이크 압박',
-    objective: '축소된 무대에서 스폰 폭풍을 버티기',
-    directorLine: '편집은 없다. 끊기면 그대로 끝이다.',
-    rule: 'CAMERA_FRAME',
+    title: 'BLOCK 06 · 압축 수용동',
+    objective: '좁아진 보안 구역에서 스폰 폭풍을 버티기',
+    directorLine: '이동 가능 면적을 축소한다. 탈출 확률을 다시 계산한다.',
+    rule: 'SURVEILLANCE_FRAME',
   },
   7: {
-    title: 'FINAL CUT · 감독의 카메라',
-    objective: '모든 규칙을 버티고 최종 컷 완성',
-    directorLine: '마지막 장면이다. 네 습관으로 네 엔딩을 찍어주마.',
-    rule: 'FINAL_BOSS',
+    title: 'CORE 07 · 중앙 통제실',
+    objective: '모든 보안 프로토콜을 버티고 중앙 통제실을 탈출',
+    directorLine: '최종 봉쇄다. 네 탈출 기록은 여기서 끝난다.',
+    rule: 'FINAL_CORE',
   },
 };
 
@@ -431,13 +431,13 @@ export class ArenaScene extends Phaser.Scene {
     this.showRuleBanner(d);
   }
 
-  private takeStory(): TakeStory {
-    return TAKE_STORIES[this.currentWave] ?? TAKE_STORIES[FINAL_WAVE];
+  private sectorStory(): SectorStory {
+    return SECTOR_STORIES[this.currentWave] ?? SECTOR_STORIES[FINAL_WAVE];
   }
 
   private setupStageRule() {
     this.clearStageRule();
-    const story = this.takeStory();
+    const story = this.sectorStory();
     this.stageRule = story.rule;
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
@@ -446,19 +446,19 @@ export class ArenaScene extends Phaser.Scene {
     this.showSceneCard(story);
 
     switch (this.stageRule) {
-      case 'SPOTLIGHT':
+      case 'SEARCHLIGHT':
         this.setupSpotlight();
         break;
-      case 'CAMERA_FRAME':
+      case 'SURVEILLANCE_FRAME':
         this.setupCameraFrame(this.currentWave >= 6 ? 0.18 : 0);
         break;
       case 'PRIORITY_TARGETS':
         this.setupPriorityTargets();
         break;
-      case 'HOTSPOT_CONFESSION':
-        this.flashStageNote('DIRECTOR READS YOUR ROUTE', '#ff2d2d');
+      case 'HOTSPOT_LOCKDOWN':
+        this.flashStageNote('DIRECTOR LOCKS YOUR ROUTE', '#ff2d2d');
         break;
-      case 'FINAL_BOSS':
+      case 'FINAL_CORE':
         this.setupCameraFrame(0.16);
         this.setupPriorityTargets(true);
         break;
@@ -482,7 +482,7 @@ export class ArenaScene extends Phaser.Scene {
     return obj;
   }
 
-  private showSceneCard(story: TakeStory) {
+  private showSceneCard(story: SectorStory) {
     const x = this.scale.width / 2;
     const card = this.add.rectangle(x, 92, 700, 78, 0x0e0e15, 0.94)
       .setStrokeStyle(1, 0x343440)
@@ -550,18 +550,18 @@ export class ArenaScene extends Phaser.Scene {
 
   private updateStageRule(dt: number) {
     switch (this.stageRule) {
-      case 'SPOTLIGHT':
+      case 'SEARCHLIGHT':
         this.updateSpotlight(dt);
         break;
-      case 'CAMERA_FRAME':
-      case 'FINAL_BOSS':
+      case 'SURVEILLANCE_FRAME':
+      case 'FINAL_CORE':
         this.tickCameraFrame(dt);
         this.drawPriorityTargetRings();
         break;
       case 'PRIORITY_TARGETS':
         this.drawPriorityTargetRings();
         break;
-      case 'HOTSPOT_CONFESSION':
+      case 'HOTSPOT_LOCKDOWN':
       case 'NONE':
         break;
     }
@@ -620,7 +620,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private stageObjectiveComplete(): boolean {
-    if (this.stageRule === 'SPOTLIGHT') return this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC;
+    if (this.stageRule === 'SEARCHLIGHT') return this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC;
     return true;
   }
 
@@ -844,7 +844,7 @@ export class ArenaScene extends Phaser.Scene {
     add(this.add.text(cx, cy + 40, detail, {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8e8ec',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
-    add(this.add.text(cx, cy + 70, `디렉터 ${this.score.director}  :  당신 ${this.score.player}`, {
+    add(this.add.text(cx, cy + 70, `DIRECTOR ${this.score.director}  :  탈옥자 ${this.score.player}`, {
       fontFamily: 'monospace', fontSize: '16px', color: '#7a7a88',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
 
@@ -858,21 +858,24 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   /** 아레나 경계 — 실플레이로 보니 벽이 어디인지 화면에 없어서 "허공에 뜬 도형"으로 읽혔다.
-   *  무대의 테두리이자 디렉터의 것이라는 표시라, 무채색 격자 위에 레드 코너 마크를 얹는다.
+   *  감옥 구역의 테두리이자 DIRECTOR가 재편집하는 보안 경계다.
    *  변주(용암·축소)가 이 위에 그려지도록 깊이는 바닥(-100)에 둔다. */
   private drawArenaFrame() {
     const { width: w, height: h } = this.scale;
     const g = this.add.graphics().setDepth(-100);
 
-    // 바닥 격자 — 이동이 눈에 잡히게 하는 참조선. 아주 어둡게 깔아 도형과 경쟁하지 않는다.
+    // 보안 시설 바닥 격자 — 이동이 눈에 잡히게 하는 참조선.
     g.lineStyle(1, 0x14141c, 1);
     for (let x = 120; x < w; x += 120) g.lineBetween(x, 0, x, h);
     for (let y = 120; y < h; y += 120) g.lineBetween(0, y, w, y);
+    g.lineStyle(1, 0x1b2d3a, 0.45);
+    for (let x = 60; x < w; x += 240) g.lineBetween(x, 0, x, h);
+    for (let y = 60; y < h; y += 240) g.lineBetween(0, y, w, y);
 
     // 경계선
     g.lineStyle(2, 0x23232e, 1).strokeRect(1, 1, w - 2, h - 2);
 
-    // 네 모서리의 레드 마크 — 무대가 디렉터의 것임을 상시 상기시킨다(전투 화면에 레드가 하나도 없었다)
+    // 네 모서리의 레드 마크 — 이 구역이 DIRECTOR의 봉쇄 영역임을 상시 상기시킨다.
     const L = 28;
     g.lineStyle(2, 0xff2d2d, 0.85);
     for (const [cx, cy, dx, dy] of [[1, 1, 1, 1], [w - 1, 1, -1, 1], [1, h - 1, 1, -1], [w - 1, h - 1, -1, -1]]) {
@@ -880,17 +883,17 @@ export class ArenaScene extends Phaser.Scene {
       g.lineBetween(cx, cy, cx, cy + dy * L);
     }
 
-    this.add.text(w - 22, 14, 'REC', {
+    this.add.text(w - 22, 14, 'LOCKDOWN', {
       fontFamily: 'monospace', fontSize: '13px', color: '#ff2d2d', fontStyle: 'bold',
     }).setOrigin(1, 0).setDepth(HUD_DEPTH);
-    this.add.text(w - 22, 34, 'DIRECTOR CAM / LIVE SET', {
+    this.add.text(w - 22, 34, 'DIRECTOR WARDEN / BLOCK MAP', {
       fontFamily: 'monospace', fontSize: '10px', color: '#7a7a88',
     }).setOrigin(1, 0).setDepth(HUD_DEPTH);
   }
 
   private createHud() {
     this.waveText = this.add
-      .text(16, 10, `TAKE ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec', fontStyle: 'bold' })
+      .text(16, 10, `SECTOR ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec', fontStyle: 'bold' })
       .setDepth(HUD_DEPTH);
     this.storyText = this.add
       .text(16, 138, '', { fontFamily: 'monospace', fontSize: '12px', color: '#e8e8ec', fontStyle: 'bold' })
@@ -915,7 +918,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateHud() {
-    this.waveText.setText(`TAKE ${this.currentWave}/${FINAL_WAVE}`);
+    this.waveText.setText(`SECTOR ${this.currentWave}/${FINAL_WAVE}`);
     this.syncHearts();
     for (let i = 0; i < this.hearts.length; i++) {
       this.hearts[i].setAlpha(i < this.player.hp ? 1 : 0.25);
@@ -933,13 +936,13 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateObjectiveText() {
-    const story = this.takeStory();
-    if (this.stageRule === 'SPOTLIGHT') {
-      this.objectiveText.setText(`${story.objective}  ·  조명 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s`);
+    const story = this.sectorStory();
+    if (this.stageRule === 'SEARCHLIGHT') {
+      this.objectiveText.setText(`${story.objective}  ·  탐조등 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s`);
       this.objectiveText.setColor(this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC ? '#e8e8ec' : '#9a9aa8');
       return;
     }
-    if (this.stageRule === 'PRIORITY_TARGETS' || this.stageRule === 'FINAL_BOSS') {
+    if (this.stageRule === 'PRIORITY_TARGETS' || this.stageRule === 'FINAL_CORE') {
       const alive = [...this.priorityTargets].filter((e) => e.active).length;
       this.objectiveText.setText(`${story.objective}  ·  타깃 ${alive}`);
       this.objectiveText.setColor(alive === 0 ? '#e8e8ec' : '#ff2d2d');
@@ -958,7 +961,7 @@ export class ArenaScene extends Phaser.Scene {
       // 잘 움직이는 플레이어에게는 이것 자체가 디렉터의 진술이고(읽을 게 없다), 그렇게 둬야
       // 깨끗한 런에서도 이 메커닉이 화면에 존재한다.
       this.predictionText
-        .setText(this.currentWave <= 1 ? 'AI 감독이 동선을 관찰하는 중' : '이번 컷에서 읽을 습관이 없다')
+        .setText(this.currentWave <= 1 ? 'DIRECTOR가 탈출 루트를 관찰하는 중' : '이번 구역에서 읽을 습관이 없다')
         .setColor('#3a3a46');
       return;
     }
@@ -967,7 +970,7 @@ export class ArenaScene extends Phaser.Scene {
     const over = def.read(r) >= def.threshold;
 
     this.predictionText
-      .setText(`감독의 지시: "${def.claim}"  ${def.evidence(r)}`)
+      .setText(`DIRECTOR 지시: "${def.claim}"  ${def.evidence(r)}`)
       .setColor(over ? '#ff2d2d' : '#7a7a88');
 
     const x = 16, y = 124, w = 160, h = 6;
@@ -989,16 +992,16 @@ export class ArenaScene extends Phaser.Scene {
 
     track(this.add.rectangle(width / 2, height / 2, width, height, 0x0a0a0f, 0.82).setDepth(HUD_DEPTH + 100));
     track(this.add.rectangle(width / 2, height / 2, 650, 250, 0x0e0e15, 0.98).setStrokeStyle(2, 0xff2d2d).setDepth(HUD_DEPTH + 101));
-    track(this.add.text(width / 2, height / 2 - 82, 'SLATE 01 / VAULT ESCAPE', {
+    track(this.add.text(width / 2, height / 2 - 82, 'PRISON BREAK / SECTOR 01', {
       fontFamily: 'monospace', fontSize: '14px', color: '#ff2d2d', letterSpacing: 2,
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    track(this.add.text(width / 2, height / 2 - 32, '카메라가 도는 동안 살아남아라', {
+    track(this.add.text(width / 2, height / 2 - 32, 'AI 감옥의 보안 구역을 돌파하라', {
       fontFamily: 'monospace', fontSize: '30px', color: '#e8e8ec', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    track(this.add.text(width / 2, height / 2 + 30, '감독은 네 습관을 기록한다. 모서리에 숨고, 같은 길로 돌고, 대시로 버티면\n다음 TAKE에서 그 습관이 규칙이 된다.', {
+    track(this.add.text(width / 2, height / 2 + 30, 'DIRECTOR는 네 탈출 습관을 기록한다. 모서리에 숨고, 같은 길로 돌고, 대시로 버티면\n다음 보안 구역이 그 습관을 겨냥해 재설계된다.', {
       fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    const start = track(this.add.text(width / 2, height / 2 + 90, '클릭해서 촬영 시작', {
+    const start = track(this.add.text(width / 2, height / 2 + 90, '클릭해서 탈출 시작', {
       fontFamily: 'monospace', fontSize: '16px', color: '#e8e8ec', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
     this.tweens.add({ targets: start, alpha: 0.35, duration: 520, yoyo: true, repeat: -1 });
@@ -1022,7 +1025,7 @@ export class ArenaScene extends Phaser.Scene {
     const bar = this.add.rectangle(this.scale.width / 2, y, 560, 44, 0x0e0e15, 0.94)
       .setStrokeStyle(1, 0xff2d2d)
       .setDepth(HUD_DEPTH + 30);
-    const text = this.add.text(this.scale.width / 2, y, `RULE CHANGE · ${summary}`, {
+    const text = this.add.text(this.scale.width / 2, y, `SECURITY OVERRIDE · ${summary}`, {
       fontFamily: 'monospace', fontSize: '14px', color: '#ff2d2d', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 31);
     this.tweens.add({

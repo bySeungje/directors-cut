@@ -8,16 +8,16 @@ export const OPENING_WAVE: Directive = {
   mutation: 'NONE',
   buff: 'NONE',
   deny: 'NONE',
-  taunt: '환영한다. 지금부터 당신을 관찰한다.',
-  intent: '오프닝: 기본 조작 관찰',
+  taunt: '수감자 734, 탈출 시도 확인. 지금부터 당신을 관찰한다.',
+  intent: '수감동 이탈: 기본 조작 관찰',
 };
 
 // export 심볼은 OPENING_WAVE 하나로 통일한다 (별칭 export 금지)
 const BANK: Record<number, Directive[]> = {
   2: [
-    { composition: [{ type: 'chaser', count: 10, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 2, spawn: 'N', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '워밍업은 끝났다.', intent: '협공 도입' },
-    { composition: [{ type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 3, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '어둠 속에서도 그렇게 움직일 수 있나.', intent: '시야 제한 테스트' },
-    { composition: [{ type: 'splitter', count: 6, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '하나를 죽이면 둘이 된다.', intent: '분열형 도입' },
+    { composition: [{ type: 'chaser', count: 10, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 2, spawn: 'N', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '1차 문은 닫혔다. 협공 프로토콜을 개방한다.', intent: '탐조등 구역: 협공 도입' },
+    { composition: [{ type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 3, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '어둠 속 탈출 루트는 이미 폐쇄했다.', intent: '탐조등 구역: 시야 제한 테스트' },
+    { composition: [{ type: 'splitter', count: 6, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '하나를 부수면 둘이 감시한다.', intent: '탐조등 구역: 분열형 도입' },
   ],
   3: [
     { composition: [{ type: 'chaser', count: 12, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '왼쪽은 이제 내 구역이다.', intent: '공간 압박' },
@@ -25,7 +25,7 @@ const BANK: Record<number, Directive[]> = {
     { composition: [{ type: 'chaser', count: 6, spawn: 'RING', elite: true }], mutation: 'SPAWN_STORM', buff: 'NONE', deny: 'NONE', taunt: '정예를 보낸다. 영광으로 알아라.', intent: '엘리트 도입' },
   ],
   4: [
-    { composition: [{ type: 'shooter', count: 6, spawn: 'RING', elite: false }, { type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '무대가 좁아진다. 도망칠 곳도.', intent: '공간 축소 압박' },
+    { composition: [{ type: 'shooter', count: 6, spawn: 'RING', elite: false }, { type: 'chaser', count: 8, spawn: 'BEHIND', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '보안 구역을 압축한다. 도망칠 곳도 줄어든다.', intent: '공간 축소 압박' },
     { composition: [{ type: 'splitter', count: 8, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '보이지 않는 것이 가장 무섭다.', intent: '시야+물량 복합' },
     { composition: [{ type: 'chaser', count: 16, spawn: 'PINCER', elite: false }, { type: 'shooter', count: 4, spawn: 'RING', elite: false }], mutation: 'NONE', buff: 'NONE', deny: 'NONE', taunt: '물량 앞에 장사 없다.', intent: '물량전' },
   ],
@@ -41,7 +41,7 @@ const BANK: Record<number, Directive[]> = {
   ],
   7: [
     { composition: [{ type: 'chaser', count: 30, spawn: 'RING', elite: false }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'shooter', count: 12, spawn: 'PINCER', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '마지막 막이다. 전력을 다해라.', intent: '피날레: 총력전' },
-    { composition: [{ type: 'splitter', count: 21, spawn: 'PINCER', elite: false }, { type: 'splitter', count: 21, spawn: 'RING', elite: false }], mutation: 'LAVA_HOTSPOT', buff: 'NONE', deny: 'NONE', taunt: '이것이 나의 연출이다.', intent: '피날레: 분열 폭풍' },
+    { composition: [{ type: 'splitter', count: 21, spawn: 'PINCER', elite: false }, { type: 'splitter', count: 21, spawn: 'RING', elite: false }], mutation: 'LAVA_HOTSPOT', buff: 'NONE', deny: 'NONE', taunt: '네가 믿은 경로를 봉쇄한다.', intent: '피날레: 분열 폭풍' },
     { composition: [{ type: 'shooter', count: 4, spawn: 'RING', elite: true }, { type: 'chaser', count: 30, spawn: 'BEHIND', elite: false }, { type: 'chaser', count: 30, spawn: 'N', elite: false }], mutation: 'FOG', buff: 'NONE', deny: 'NONE', taunt: '엔딩은 어둠 속에서.', intent: '피날레: 암전 총공세' },
   ],
 };

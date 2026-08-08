@@ -37,7 +37,7 @@ const SHOOTER_LEAD_MAX_SEC = 0.9;
 /** 선행 조준에 섞는 오차(rad). 완벽한 예측이 아니라 **페인트가 통하는 수준**이 설계 의도다. */
 const SHOOTER_AIM_JITTER_RAD = 0.10;
 
-// ── 비주얼 상수 (스펙 3.5: 무채색 엔티티, 레드는 디렉터/엘리트 전용) ─────────
+// ── 비주얼 상수 (감옥 탈출 톤: 무채색 엔티티, 레드는 DIRECTOR/락다운 전용) ─────────
 // PLAYER_COLOR/ENEMY_COLOR/ELITE_COLOR는 export도 한다 — juice.ts의 킬 파편·대시 잔상 틴트가
 // 여기 팔레트를 그대로 물려받아야 색이 갈라지지 않는다(Task 9).
 export const PLAYER_COLOR = 0xe8e8ec;
@@ -108,14 +108,22 @@ function drawHeart(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: nu
 export function generateTextures(scene: Phaser.Scene) {
   const g = scene.add.graphics();
 
-  // player: 원 + 조준 방향 노치(오른쪽 = rotation 0)
+  // player: 후드 쓴 탈옥자 실루엣. 오른쪽 노치가 조준 방향(rotation 0)을 읽게 한다.
   g.clear();
-  g.fillStyle(PLAYER_COLOR, 1);
-  g.fillCircle(PLAYER_TEX_SIZE / 2, PLAYER_TEX_SIZE / 2, PLAYER_RADIUS);
-  g.lineStyle(2, 0x0a0a0f, 1);
-  g.strokeCircle(PLAYER_TEX_SIZE / 2, PLAYER_TEX_SIZE / 2, PLAYER_RADIUS - 2);
-  g.lineStyle(2, 0xe8e8ec, 0.9);
-  g.lineBetween(PLAYER_TEX_SIZE / 2 - 5, PLAYER_TEX_SIZE / 2 - 10, PLAYER_TEX_SIZE / 2 + 5, PLAYER_TEX_SIZE / 2 - 10);
+  {
+    const c = PLAYER_TEX_SIZE / 2;
+    g.fillStyle(PLAYER_COLOR, 1);
+    g.fillTriangle(c, c - 14, c - 12, c + 8, c + 12, c + 8);
+    g.fillRoundedRect(c - 9, c + 2, 18, 14, 4);
+    g.fillStyle(0x0a0a0f, 1);
+    g.fillCircle(c, c - 3, 7);
+    g.fillStyle(PLAYER_COLOR, 0.95);
+    g.fillCircle(c, c - 4, 4);
+    g.fillStyle(0x0a0a0f, 1);
+    g.fillRect(c - 5, c - 5, 10, 2);
+    g.lineStyle(2, 0xe8e8ec, 0.85);
+    g.lineBetween(c - 8, c + 11, c + 8, c + 11);
+  }
   g.fillTriangle(
     PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS + 7, PLAYER_TEX_SIZE / 2,
     PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS - 2, PLAYER_TEX_SIZE / 2 - 6,
@@ -123,39 +131,48 @@ export function generateTextures(scene: Phaser.Scene) {
   );
   g.generateTexture(PLAYER_TEX, PLAYER_TEX_SIZE, PLAYER_TEX_SIZE);
 
-  // chaser: 삼각(오른쪽을 향함)
+  // chaser: 방패를 든 경비 로봇. 삼각형 느낌을 줄이고 전면 장갑과 다리로 실루엣을 만든다.
   g.clear();
   g.fillStyle(ENEMY_COLOR, 1);
   {
     const s = ENEMY_DEF.chaser.size;
     const c = ENEMY_TEX_SIZE.chaser / 2;
-    g.fillTriangle(c + s, c, c - s * 0.7, c - s * 0.85, c - s * 0.7, c + s * 0.85);
+    g.fillRoundedRect(c - s * 0.65, c - s * 0.82, s * 1.3, s * 1.58, 4);
+    g.fillRoundedRect(c + s * 0.2, c - s * 0.58, s * 0.72, s * 1.16, 3);
     g.fillStyle(0x0a0a0f, 1);
-    g.fillTriangle(c + s * 0.35, c, c - s * 0.08, c - s * 0.28, c - s * 0.08, c + s * 0.28);
-    g.lineStyle(2, 0x9a9aa8, 0.75);
-    g.lineBetween(c - s * 0.56, c - s * 0.55, c - s * 0.92, c - s * 0.9);
-    g.lineBetween(c - s * 0.56, c + s * 0.55, c - s * 0.92, c + s * 0.9);
+    g.fillRect(c - s * 0.45, c - s * 0.4, s * 0.72, 3);
+    g.fillRect(c + s * 0.36, c - s * 0.28, s * 0.2, s * 0.56);
+    g.lineStyle(2, 0x0a0a0f, 0.85);
+    g.lineBetween(c - s * 0.45, c + s * 0.8, c - s * 0.45, c + s * 1.02);
+    g.lineBetween(c + s * 0.25, c + s * 0.8, c + s * 0.25, c + s * 1.02);
+    g.lineStyle(1, 0xe8e8ec, 0.45);
+    g.strokeRect(c + s * 0.28, c - s * 0.48, s * 0.52, s * 0.96);
   }
   g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
 
-  // shooter: 감시 카메라 드론. 사각형만 있으면 UI 도형처럼 보여 렌즈와 배럴을 더한다.
+  // shooter: 감시 드론. 렌즈, 날개, 총구로 "카메라형 적"을 즉시 읽게 한다.
   g.clear();
   g.fillStyle(ENEMY_COLOR, 1);
   {
     const s = ENEMY_DEF.shooter.size;
     const c = ENEMY_TEX_SIZE.shooter / 2;
-    g.fillRoundedRect(c - s, c - s, s * 2, s * 2, 4);
+    g.fillRoundedRect(c - s * 0.88, c - s * 0.72, s * 1.76, s * 1.44, 5);
+    g.fillRect(c - s * 1.26, c - 4, s * 0.38, 8);
+    g.fillRect(c + s * 0.88, c - 4, s * 0.38, 8);
     g.fillStyle(0x0a0a0f, 1);
     g.fillCircle(c, c, s * 0.48);
-    g.fillStyle(0x9a9aa8, 1);
+    g.fillStyle(0x72d7ff, 0.8);
     g.fillCircle(c, c, s * 0.23);
+    g.fillStyle(0xe8e8ec, 0.9);
+    g.fillCircle(c - 2, c - 2, 2);
+    g.fillStyle(ENEMY_COLOR, 1);
     g.fillTriangle(c + s + 6, c, c + s - 2, c - 5, c + s - 2, c + 5);
     g.lineStyle(2, 0x0a0a0f, 0.9);
-    g.strokeRect(c - s + 3, c - s + 3, s * 2 - 6, s * 2 - 6);
+    g.strokeRect(c - s * 0.68, c - s * 0.5, s * 1.36, s);
   }
   g.generateTexture(ENEMY_TEX.shooter, ENEMY_TEX_SIZE.shooter, ENEMY_TEX_SIZE.shooter);
 
-  // splitter: 분열 보안 드론. 내부 절개선을 넣어 "죽으면 갈라진다"는 힌트를 준다.
+  // splitter: 균열 난 분열 보안 봇. 내부 절개선을 넣어 "죽으면 갈라진다"는 힌트를 준다.
   g.clear();
   g.fillStyle(ENEMY_COLOR, 1);
   {
