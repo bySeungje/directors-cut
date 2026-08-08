@@ -67,6 +67,18 @@ export const HUD_HEART_TEX = 'hud-heart';
 const HUD_HEART_TEX_SIZE = 22;
 const HUD_HEART_RADIUS = 8;
 
+const SPRITE_PATH = 'assets/sprites';
+
+/** Phaser preload 단계에서 실제 스프라이트 SVG를 먼저 등록한다. generateTextures는 실패 시 fallback만 만든다. */
+export function preloadEntityTextures(scene: Phaser.Scene) {
+  scene.load.svg(PLAYER_TEX, `${SPRITE_PATH}/prisoner.svg`, { width: PLAYER_TEX_SIZE, height: PLAYER_TEX_SIZE });
+  scene.load.svg(ENEMY_TEX.chaser, `${SPRITE_PATH}/guard-robot.svg`, { width: ENEMY_TEX_SIZE.chaser, height: ENEMY_TEX_SIZE.chaser });
+  scene.load.svg(ENEMY_TEX.shooter, `${SPRITE_PATH}/surveillance-drone.svg`, { width: ENEMY_TEX_SIZE.shooter, height: ENEMY_TEX_SIZE.shooter });
+  scene.load.svg(ENEMY_TEX.splitter, `${SPRITE_PATH}/splitter-bot.svg`, { width: ENEMY_TEX_SIZE.splitter, height: ENEMY_TEX_SIZE.splitter });
+  scene.load.svg(BULLET_PLAYER_TEX, `${SPRITE_PATH}/emp-pulse.svg`, { width: BULLET_PLAYER_TEX_SIZE, height: BULLET_PLAYER_TEX_SIZE });
+  scene.load.svg(BULLET_ENEMY_TEX, `${SPRITE_PATH}/stun-pulse.svg`, { width: BULLET_ENEMY_TEX_SIZE, height: BULLET_ENEMY_TEX_SIZE });
+}
+
 // ── 튜닝 상수 (브리프 명시 수치) ────────────────────────────────────────
 const DASH_DURATION_MS = 300;
 const DASH_SPEED_MULT = 3;
@@ -109,8 +121,8 @@ export function generateTextures(scene: Phaser.Scene) {
   const g = scene.add.graphics();
 
   // player: 후드 쓴 탈옥자 실루엣. 삼각 전면 노치를 없애 "드릴/미사일"처럼 읽히지 않게 한다.
-  g.clear();
-  {
+  if (!scene.textures.exists(PLAYER_TEX)) {
+    g.clear();
     const c = PLAYER_TEX_SIZE / 2;
     g.fillStyle(PLAYER_COLOR, 1);
     g.fillRoundedRect(c - 8, c - 8, 16, 24, 6);
@@ -130,13 +142,13 @@ export function generateTextures(scene: Phaser.Scene) {
     g.lineStyle(2, 0xe8e8ec, 0.65);
     g.lineBetween(c - 13, c + 5, c - 18, c + 9);
     g.lineBetween(c + 13, c + 5, c + 18, c + 9);
+    g.generateTexture(PLAYER_TEX, PLAYER_TEX_SIZE, PLAYER_TEX_SIZE);
   }
-  g.generateTexture(PLAYER_TEX, PLAYER_TEX_SIZE, PLAYER_TEX_SIZE);
 
   // chaser: 방패를 든 경비 로봇. 옆으로 튀어나온 전면 장갑을 줄여 탱크처럼 보이는 문제를 피한다.
-  g.clear();
-  g.fillStyle(ENEMY_COLOR, 1);
-  {
+  if (!scene.textures.exists(ENEMY_TEX.chaser)) {
+    g.clear();
+    g.fillStyle(ENEMY_COLOR, 1);
     const s = ENEMY_DEF.chaser.size;
     const c = ENEMY_TEX_SIZE.chaser / 2;
     g.fillRoundedRect(c - s * 0.72, c - s * 0.82, s * 1.44, s * 1.58, 4);
@@ -149,13 +161,13 @@ export function generateTextures(scene: Phaser.Scene) {
     g.lineBetween(c + s * 0.42, c + s * 0.8, c + s * 0.42, c + s * 1.02);
     g.lineStyle(1, 0xe8e8ec, 0.45);
     g.strokeRoundedRect(c + s * 0.46, c - s * 0.42, s * 0.34, s * 0.84, 3);
+    g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
   }
-  g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
 
   // shooter: 감시 드론. 렌즈, 날개, 총구로 "카메라형 적"을 즉시 읽게 한다.
-  g.clear();
-  g.fillStyle(ENEMY_COLOR, 1);
-  {
+  if (!scene.textures.exists(ENEMY_TEX.shooter)) {
+    g.clear();
+    g.fillStyle(ENEMY_COLOR, 1);
     const s = ENEMY_DEF.shooter.size;
     const c = ENEMY_TEX_SIZE.shooter / 2;
     g.fillRoundedRect(c - s * 0.88, c - s * 0.72, s * 1.76, s * 1.44, 5);
@@ -171,13 +183,13 @@ export function generateTextures(scene: Phaser.Scene) {
     g.fillTriangle(c + s + 6, c, c + s - 2, c - 5, c + s - 2, c + 5);
     g.lineStyle(2, 0x0a0a0f, 0.9);
     g.strokeRect(c - s * 0.68, c - s * 0.5, s * 1.36, s);
+    g.generateTexture(ENEMY_TEX.shooter, ENEMY_TEX_SIZE.shooter, ENEMY_TEX_SIZE.shooter);
   }
-  g.generateTexture(ENEMY_TEX.shooter, ENEMY_TEX_SIZE.shooter, ENEMY_TEX_SIZE.shooter);
 
   // splitter: 균열 난 분열 보안 봇. 내부 절개선을 넣어 "죽으면 갈라진다"는 힌트를 준다.
-  g.clear();
-  g.fillStyle(ENEMY_COLOR, 1);
-  {
+  if (!scene.textures.exists(ENEMY_TEX.splitter)) {
+    g.clear();
+    g.fillStyle(ENEMY_COLOR, 1);
     const c = ENEMY_TEX_SIZE.splitter / 2;
     const s = ENEMY_DEF.splitter.size;
     drawHexagon(g, c, c, s);
@@ -187,37 +199,39 @@ export function generateTextures(scene: Phaser.Scene) {
     g.lineBetween(c - s * 0.7, c + s * 0.42, c + s * 0.7, c - s * 0.42);
     g.fillStyle(0xe8e8ec, 0.85);
     g.fillCircle(c, c, 3);
+    g.generateTexture(ENEMY_TEX.splitter, ENEMY_TEX_SIZE.splitter, ENEMY_TEX_SIZE.splitter);
   }
-  g.generateTexture(ENEMY_TEX.splitter, ENEMY_TEX_SIZE.splitter, ENEMY_TEX_SIZE.splitter);
 
   // 플레이어 EMP 펄스 — 물리적 탄환/미사일이 아니라 보안 봇을 무력화하는 작은 링.
-  g.clear();
-  {
+  if (!scene.textures.exists(BULLET_PLAYER_TEX)) {
+    g.clear();
     const c = BULLET_PLAYER_TEX_SIZE / 2;
     g.lineStyle(2, 0x72d7ff, 0.95).strokeCircle(c, c, BULLET_PLAYER_RADIUS);
     g.lineStyle(1, PLAYER_COLOR, 0.85).strokeCircle(c, c, BULLET_PLAYER_RADIUS - 3);
     g.fillStyle(0x72d7ff, 0.75);
     g.fillCircle(c, c, 2);
+    g.generateTexture(BULLET_PLAYER_TEX, BULLET_PLAYER_TEX_SIZE, BULLET_PLAYER_TEX_SIZE);
   }
-  g.generateTexture(BULLET_PLAYER_TEX, BULLET_PLAYER_TEX_SIZE, BULLET_PLAYER_TEX_SIZE);
 
   // 적 보안 펄스 — 드론이 쏘는 비살상 스턴 신호.
-  g.clear();
-  {
+  if (!scene.textures.exists(BULLET_ENEMY_TEX)) {
+    g.clear();
     const c = BULLET_ENEMY_TEX_SIZE / 2;
     g.lineStyle(2, ENEMY_COLOR, 0.9);
     g.lineBetween(c - 5, c, c + 5, c);
     g.lineBetween(c, c - 5, c, c + 5);
     g.fillStyle(ENEMY_COLOR, 0.9);
     g.fillCircle(c, c, 3);
+    g.generateTexture(BULLET_ENEMY_TEX, BULLET_ENEMY_TEX_SIZE, BULLET_ENEMY_TEX_SIZE);
   }
-  g.generateTexture(BULLET_ENEMY_TEX, BULLET_ENEMY_TEX_SIZE, BULLET_ENEMY_TEX_SIZE);
 
   // HUD 하트 (무채색 — HP는 디렉터 요소가 아니므로 레드 금지)
-  g.clear();
-  g.fillStyle(PLAYER_COLOR, 1);
-  drawHeart(g, HUD_HEART_TEX_SIZE / 2, HUD_HEART_TEX_SIZE / 2, HUD_HEART_RADIUS);
-  g.generateTexture(HUD_HEART_TEX, HUD_HEART_TEX_SIZE, HUD_HEART_TEX_SIZE);
+  if (!scene.textures.exists(HUD_HEART_TEX)) {
+    g.clear();
+    g.fillStyle(PLAYER_COLOR, 1);
+    drawHeart(g, HUD_HEART_TEX_SIZE / 2, HUD_HEART_TEX_SIZE / 2, HUD_HEART_RADIUS);
+    g.generateTexture(HUD_HEART_TEX, HUD_HEART_TEX_SIZE, HUD_HEART_TEX_SIZE);
+  }
 
   g.destroy();
 }

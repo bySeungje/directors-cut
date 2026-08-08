@@ -7,7 +7,7 @@ import {
   type HabitReading, type Verdict,
 } from '../habits';
 import {
-  Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures,
+  Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures, preloadEntityTextures,
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
 import { runDirective } from '../waveRunner';
@@ -180,6 +180,10 @@ export class ArenaScene extends Phaser.Scene {
 
   constructor() {
     super('ArenaScene');
+  }
+
+  preload() {
+    preloadEntityTextures(this);
   }
 
   create() {
