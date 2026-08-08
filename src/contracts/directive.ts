@@ -1,94 +1,98 @@
 import { z } from 'zod';
 
-export const ENEMY_TYPES = ['chaser', 'shooter', 'splitter'] as const;
-export const SPAWN_PATTERNS = ['N', 'S', 'E', 'W', 'RING', 'PINCER', 'BEHIND'] as const;
-export const MUTATIONS = ['NONE', 'LAVA_LEFT', 'LAVA_RIGHT', 'LAVA_HOTSPOT', 'FOG', 'SPEED_SURGE', 'SHRINK_ARENA', 'SPAWN_STORM'] as const;
-export const BUFF_CARDS = ['NONE', 'TOUGH', 'SWIFT', 'RELENTLESS', 'RAPID_FIRE', 'MARKSMAN', 'VOLATILE', 'INTERCEPT', 'ENCIRCLE', 'EVASIVE'] as const;
-/** 업그레이드 봉인 대상. `src/game/upgrades.ts`의 UPGRADE_IDS와 항목·순서가 일치해야 한다
- *  — 별도 파일이라 타입체커가 보장하지 못하므로 tests/upgrades.test.ts가 드리프트를 막는다. */
-export const DENY_TARGETS = [
-  'NONE', 'DAMAGE_UP', 'FIRE_RATE_UP', 'MOVE_SPEED_UP', 'HP_PLUS',
-  'PIERCE', 'MULTI_SHOT', 'BULLET_SPEED_UP', 'DASH_CD_DOWN',
-] as const;
+// ── 수읽기 계약 v2 (스펙 §3.4) ──────────────────────────────────────────────
+// 원칙: LLM에게는 어휘를, 집행은 결정론으로. LLM은 수치·확률을 정하지 못한다.
+// ⚠️ supabase/functions/director/index.ts에 DIRECTIVE_JSON_SCHEMA의 수동 사본이 있다
+//    (별도 번들·타입체크 밖). 이 파일 변경 시 반드시 함께 갱신할 것 (CLAUDE.md).
 
-/** 플레이어 습관 어휘. `WaveLog`를 타고 프롬프트에 실리므로 계약이 소유한다 —
- *  단 `DirectiveSchema`/`DIRECTIVE_JSON_SCHEMA`(LLM 출력)에는 들어가지 않으므로
- *  프록시 수동 사본과 무관하다. 판정 규칙은 `src/game/habits.ts`. */
-export const HABIT_IDS = ['ANCHOR', 'CORNER', 'DASH'] as const;
-export type HabitId = (typeof HABIT_IDS)[number];
+export const DOORS = ['L', 'R'] as const;
+export type Door = (typeof DOORS)[number];
 
-export type EnemyType = (typeof ENEMY_TYPES)[number];
-export type SpawnPattern = (typeof SPAWN_PATTERNS)[number];
-export type Mutation = (typeof MUTATIONS)[number];
-export type BuffCard = (typeof BUFF_CARDS)[number];
-export type DenyTarget = (typeof DENY_TARGETS)[number];
+/** 읽기 세션이 선언할 수 있는 패턴 어휘 = 예측기 5종 중 표시 가능한 4종.
+ *  엔진이 현재 통계로 산출한 "실존 후보"만 LLM에 제시되며, LLM은 그중에서 고른다(날조 구조 차단).
+ *  선언된 패턴은 약속 창(다음 2라운드)의 실제 덫 정책이 된다 — 스펙 §3.4 "말한 읽기는 지킨다". */
+export const PATTERN_IDS = ['FREQ', 'ALTERNATE', 'SEQUENCE', 'AFTER_CAUGHT'] as const;
+export type PatternId = (typeof PATTERN_IDS)[number];
 
-export const CompositionSchema = z.object({
-  type: z.enum(ENEMY_TYPES),
-  count: z.number().int().min(1).max(30),
-  spawn: z.enum(SPAWN_PATTERNS),
-  elite: z.boolean(),
+/** 창 종료 후 적응 앙상블의 프리셋 어휘. 가중치 수치는 엔진(predictor.ts) 소유. */
+export const STRATEGIES = ['BALANCED', 'PRIOR_HEAVY', 'RECENT_ONLY', 'PATTERN_HEAVY', 'CONTRARIAN', 'BAIT'] as const;
+export type Strategy = (typeof STRATEGIES)[number];
+
+export const BAIT_DOORS = ['L', 'R', 'NONE'] as const;
+export type BaitDoor = (typeof BAIT_DOORS)[number];
+
+export const READ_MAX = 60;
+export const TAUNT_MAX = 40;
+export const INTENT_MAX = 80;
+
+export const SessionDirectiveSchema = z.object({
+  readPatternId: z.enum(PATTERN_IDS),
+  read: z.string().min(1).max(READ_MAX),
+  taunt: z.string().min(1).max(TAUNT_MAX),
+  strategy: z.enum(STRATEGIES),
+  baitDoor: z.enum(BAIT_DOORS),
+  intent: z.string().min(1).max(INTENT_MAX),
 });
+export type SessionDirective = z.infer<typeof SessionDirectiveSchema>;
 
-export const DirectiveSchema = z.object({
-  composition: z.array(CompositionSchema).min(1).max(4),
-  mutation: z.enum(MUTATIONS),
-  buff: z.enum(BUFF_CARDS),
-  deny: z.enum(DENY_TARGETS),
-  taunt: z.string().min(1).max(60),
-  intent: z.string().min(1).max(100),
-});
-
-export type Composition = z.infer<typeof CompositionSchema>;
-export type Directive = z.infer<typeof DirectiveSchema>;
-
-export interface WaveLog {
-  wave: number;
-  clearTimeSec: number;
-  hpLost: number;
-  damageSources: Partial<Record<EnemyType, number>>;
-  movement: { quadrantTime: { NW: number; NE: number; SW: number; SE: number }; wallHugRatio: number; dashCount: number; hotspotConcentration: number };
-  combat: { kills: Partial<Record<EnemyType, number>>; accuracy: number; clusterRatio: number };
-  upgrades: string[];
-  prevMutations: Mutation[];
-  /** 이 웨이브에서 관측된 지배적 습관. **선택 필드다** — `client.ts`의 `WARMUP_LOG`와 테스트 픽스처가
-   *  `WaveLog` 객체 리터럴을 직접 만들고 있어 필수로 두면 타입체크가 깨진다.
-   *  채우는 곳은 `ArenaScene.snapshotCurrentWaveLog`이지 `collector.finish()`가 아니다 —
-   *  finish() 반환 뒤에 hpLost가 보정되므로 수집기는 최종 로그를 보지 못한다. */
-  dominantHabit?: HabitId | null;
+/** 엔진 → LLM: 실존 패턴 후보. 통계 수치까지 제공해 LLM은 "선택 + 패러프레이즈"만 한다. */
+export interface PatternCandidate {
+  id: PatternId;
+  /** 사람이 읽는 형태의 통계 요약 (엔진 템플릿 산출) — LLM read의 원문 재료 */
+  evidence: string;
+  /** 해당 예측기의 현재 앙상블 성적 (0~1) */
+  score: number;
 }
 
-export const ENEMY_COST: Record<EnemyType, number> = { chaser: 1, shooter: 2, splitter: 2 };
-export const ELITE_MULT = 3;
-/** 강화 카드 비용 = 해당 웨이브 예산의 25%(반올림). NONE은 0. (스펙 §3.4.1) */
-export const BUFF_COST_RATIO = 0.25;
+/** 읽기 세션 요청 페이로드 (프록시 mode: 'session') */
+export interface SessionInput {
+  sessionNo: 1 | 2;
+  roundNo: number;
+  choices: Door[];
+  caughtHistory: boolean[];
+  bank: number;
+  unsettled: number;
+  streak: number;
+  target: number;
+  settleCount: number;
+  /** 욕심 지표: 스트릭이 3 이상인 상태로 라운드에 들어간 횟수 */
+  greedRounds: number;
+  candidates: PatternCandidate[];
+  prevStrategy: Strategy;
+  runCount: number;
+}
 
-// API structured output용 (프록시에서 사용). Anthropic structured outputs는 minimum/maximum/maxLength/minItems를
-// 지원하지 않아 위 zod 스키마와의 완전한 파리티는 원리적으로 불가능하다 — 범위를 벗어난 응답은 validateDirective가
-// 걸러 폴백으로 전환한다(설계된 이중 검증, src/director/validator.ts).
+/** 최종 리포트 요청 페이로드 (프록시 mode: 'report') */
+export interface ReportInput {
+  result: 'WIN' | 'LOSE';
+  earlyEnd: 'WIN_CONFIRMED' | 'DEAD_END' | null;
+  roundsPlayed: number;
+  bank: number;
+  target: number;
+  caughtCount: number;
+  bestStreak: number;
+  settleCount: number;
+  greedRounds: number;
+  /** 잡힌 라운드들의 귀속 패턴 분포 — "무엇에 읽혔나" */
+  caughtByPattern: Partial<Record<PatternId, number>>;
+  /** 약속 창에서의 성적 — 역이용 능력 지표 */
+  windowRounds: number;
+  windowPasses: number;
+  runCount: number;
+}
+
+// API structured output용 (프록시에서 사용). Anthropic structured outputs는 maxLength를 지원하지
+// 않아 zod와의 완전한 파리티는 불가능하다 — 길이 초과는 validator가 절단으로 처리(폴백 아님).
 export const DIRECTIVE_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    composition: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          type: { type: 'string', enum: [...ENEMY_TYPES] },
-          count: { type: 'integer' },
-          spawn: { type: 'string', enum: [...SPAWN_PATTERNS] },
-          elite: { type: 'boolean' },
-        },
-        required: ['type', 'count', 'spawn', 'elite'],
-        additionalProperties: false,
-      },
-    },
-    mutation: { type: 'string', enum: [...MUTATIONS] },
-    buff: { type: 'string', enum: [...BUFF_CARDS] },
-    deny: { type: 'string', enum: [...DENY_TARGETS] },
+    readPatternId: { type: 'string', enum: [...PATTERN_IDS] },
+    read: { type: 'string' },
     taunt: { type: 'string' },
+    strategy: { type: 'string', enum: [...STRATEGIES] },
+    baitDoor: { type: 'string', enum: [...BAIT_DOORS] },
     intent: { type: 'string' },
   },
-  required: ['composition', 'mutation', 'buff', 'deny', 'taunt', 'intent'],
+  required: ['readPatternId', 'read', 'taunt', 'strategy', 'baitDoor', 'intent'],
   additionalProperties: false,
 } as const;

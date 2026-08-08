@@ -49,58 +49,9 @@ export function killBurst(scene: Phaser.Scene, x: number, y: number, color: numb
   }
 }
 
-// ── 웨이브 클리어 슬로모 (브리프 의도: 0.4배속 → 정상, 0.5초) ─────────────
-/** ⚠ Arcade World의 timeScale은 **역수**다 — Phaser 공식 정의로 1=정상, 2=절반 속도, 0.5=2배 속도.
- *  구현상 `msPerFrame = _frameTimeMS × timeScale`이고 `while (_elapsed >= msPerFrame) step()`이라,
- *  timeScale이 작을수록 한 프레임에 물리 스텝이 더 많이 돈다(World.js:947, fixedStep 기본 true).
- *  브리프의 "timeScale 0.4"를 그대로 넣으면 0.4배속이 아니라 **2.5배 가속**이 된다 — 초기 구현이
- *  그 상태였고 웨이브 클리어마다 화면이 빨라졌다. 0.4배속을 얻으려면 역수인 2.5를 넣어야 한다. */
-const SLOWMO_FROM = 1 / 0.4; // = 2.5 → 0.4배속
-const SLOWMO_TO = 1.0;
-const SLOWMO_DURATION_MS = 500;
-
-/** Arcade Physics World의 timeScale만 조작한다 — scene.time/tweens 자체는 건드리지 않는다.
- *  인터벌 연출(대사 타이핑 등, ui/interval.ts)이 scene.time 기반이라 함께 느려지면 안 되기 때문
- *  (이 회복 트윈 자신도 tweens 클록 기준이라 물리 슬로우다운과 무관하게 정확히 0.5초에 끝난다). */
-export function waveClearSlowmo(scene: Phaser.Scene): void {
-  const world = scene.physics.world;
-  world.timeScale = SLOWMO_FROM;
-  scene.tweens.addCounter({
-    from: SLOWMO_FROM,
-    to: SLOWMO_TO,
-    duration: SLOWMO_DURATION_MS,
-    ease: 'Sine.easeOut',
-    onUpdate: (tween) => {
-      world.timeScale = tween.getValue() as number;
-    },
-  });
-}
-
-// ── 대시 잔상 ─────────────────────────────────────────────────────────
-const DASH_GHOST_COUNT = 5;
-const DASH_GHOST_INTERVAL_MS = 55; // 5개 × 55ms ≈ 대시 지속시간(300ms, entities.ts DASH_DURATION_MS)에 맞춤
-const DASH_GHOST_FADE_MS = 260;
-const DASH_GHOST_ALPHA = 0.35;
-
-/** 대시 시작 시 1회 호출 — 이후 대시 궤적을 따라 페이드아웃되는 잔상 5개를 스태거로 남긴다.
- *  매 프레임 스폰이 아니라 delayedCall 스태거인 이유: 대시 중 계속 호출하면 Player 쪽에 매 프레임 훅이
- *  필요해 entities.ts가 juice.ts를 알아야 한다 — 대시 "시작" 이벤트 1회만으로 궤적 잔상을 흉내낸다. */
-export function dashAfterimage(scene: Phaser.Scene, sprite: Phaser.GameObjects.Sprite, color: number): void {
-  for (let i = 0; i < DASH_GHOST_COUNT; i++) {
-    scene.time.delayedCall(i * DASH_GHOST_INTERVAL_MS, () => {
-      if (!sprite.active) return;
-      const ghost = scene.add
-        .image(sprite.x, sprite.y, sprite.texture.key)
-        .setRotation(sprite.rotation)
-        .setTint(color)
-        .setAlpha(DASH_GHOST_ALPHA)
-        .setDepth(sprite.depth - 1);
-      scene.tweens.add({
-        targets: ghost,
-        alpha: 0,
-        duration: DASH_GHOST_FADE_MS,
-        onComplete: () => ghost.destroy(),
-      });
-    });
-  }
+/** 전면 레드 플래시 — 잡힘(예측됨) 연출. 카메라 flash는 흰색 기본이라 오버레이 방식. */
+export function redFlash(scene: Phaser.Scene, alpha = 0.22, durationMs = 180): void {
+  const { width, height } = scene.scale;
+  const overlay = scene.add.rectangle(width / 2, height / 2, width, height, 0xff2d2d, alpha).setDepth(900);
+  scene.tweens.add({ targets: overlay, alpha: 0, duration: durationMs, onComplete: () => overlay.destroy() });
 }

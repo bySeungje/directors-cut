@@ -1,58 +1,62 @@
-import { Directive, Mutation, BuffCard, DenyTarget, WaveLog } from '../contracts/directive';
-import { validateDirective, budgetFor } from './validator';
-import { pickFallback } from './fallbackBank';
+import type { ReportInput, SessionDirective, SessionInput } from '../contracts/directive';
+import { validateSessionDirective } from './validator';
+
+// ── 프록시 클라이언트 v2 (스펙 §3.4) ────────────────────────────────────────
+// 호출 예산: 런당 4회 = 읽기 세션 2 + 최종 리포트 1 + 타이틀 워밍업 1.
+// 실패·타임아웃·검증 실패 → null 반환, 호출측이 조립형 폴백 사용. 게임은 절대 멈추지 않는다.
 
 const TIMEOUT_MS = 4000;
+const REPORT_TIMEOUT_MS = 8000;
 const DIRECTOR_URL: string | undefined = import.meta.env?.VITE_DIRECTOR_URL;
 export const sessionId = crypto.randomUUID();
 
-// 워밍업 전용 더미 로그 — 실플레이 로그가 없는 타이틀 화면에서 보내는 최소 유효 형태(스펙 3.4 amendment).
-const WARMUP_LOG: WaveLog = {
-  wave: 1, clearTimeSec: 0, hpLost: 0, damageSources: {},
-  movement: { quadrantTime: { NW: 0, NE: 0, SW: 0, SE: 0 }, wallHugRatio: 0, dashCount: 0, hotspotConcentration: 0 },
-  combat: { kills: {}, accuracy: 0, clusterRatio: 0 }, upgrades: [], prevMutations: [],
-};
-
-export async function requestDirective(
-  log: WaveLog, wave: number, prevMutation: Mutation, prevBuff: BuffCard, prevDeny: DenyTarget,
-): Promise<{ directive: Directive; fromLLM: boolean }> {
-  if (!DIRECTOR_URL) return { directive: pickFallback(wave, prevMutation), fromLLM: false };
+async function post(body: Record<string, unknown>, timeoutMs: number): Promise<unknown | null> {
+  if (!DIRECTOR_URL) return null;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(DIRECTOR_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode: 'directive', log, wave, budget: budgetFor(wave), prevMutation, prevBuff, prevDeny, sessionId }),
+      body: JSON.stringify({ ...body, sessionId }),
       signal: ctrl.signal,
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
-    const body = await res.json();
-    const valid = validateDirective(body.directive, wave, prevMutation, prevBuff, prevDeny);
-    if (!valid) throw new Error('invalid directive');
-    return { directive: valid, fromLLM: true };
+    return await res.json();
   } catch {
-    return { directive: pickFallback(wave, prevMutation), fromLLM: false };
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** 타이틀 화면 진입 시 1회 비동기 발사하는 워밍업 호출(스펙 3.4 amendment) — 응답은 버린다.
- *  하루 첫 실호출이 API 최초 스키마 컴파일+Edge Function 콜드스타트와 겹쳐 4초 타임아웃을 넘기는 사고를
- *  막기 위해, 플레이어가 실제로 웨이브 1→2 인터벌에 도달하기 전에 프록시·모델 경로를 미리 데운다.
- *  결과를 기다리지 않고 실패해도 무시한다 — 게임 흐름에 어떤 영향도 주지 않는다.
- *  세션 캡에는 산입하지 않도록 warmup 플래그를 함께 보낸다(일일 캡에는 산입 — 프록시 측 처리). */
+/** 읽기 세션 — null이면 호출측이 assembleSessionFallback 사용 */
+export async function requestSessionDirective(input: SessionInput): Promise<SessionDirective | null> {
+  const body = await post({ mode: 'session', input }, TIMEOUT_MS);
+  if (!body || typeof body !== 'object') return null;
+  const raw = (body as { directive?: unknown }).directive;
+  return validateSessionDirective(raw, input.candidates.map((c) => c.id));
+}
+
+/** 최종 리포트 — null이면 호출측이 assembleReport 사용 */
+export async function requestReport(input: ReportInput): Promise<{ body: string; title: string } | null> {
+  const body = await post({ mode: 'report', input }, REPORT_TIMEOUT_MS);
+  if (!body || typeof body !== 'object') return null;
+  const r = body as { report?: unknown; title?: unknown };
+  if (typeof r.report !== 'string' || r.report.length === 0) return null;
+  const title = typeof r.title === 'string' && r.title.length > 0 ? r.title.slice(0, 12) : null;
+  return { body: r.report.slice(0, 460), title: title ?? '이름 없는 손' };
+}
+
+/** 타이틀 진입 시 1회 비동기 워밍업(전작 amendment 승계) — 프록시·모델 콜드스타트를 데운다.
+ *  결과는 버리고 실패는 무시. 세션 캡 미산입(warmup 플래그), 일일 캡 산입. */
 export function warmUpDirector(): void {
   if (!DIRECTOR_URL) return;
   try {
     fetch(DIRECTOR_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'directive', log: WARMUP_LOG, wave: 1, budget: budgetFor(1), prevMutation: 'NONE', prevBuff: 'NONE',
-        prevDeny: 'NONE', sessionId, warmup: true,
-      }),
+      body: JSON.stringify({ mode: 'warmup', sessionId, warmup: true }),
     }).catch(() => {});
   } catch {
     // fetch 동기 예외 방어 — 워밍업 실패는 절대 게임을 막지 않는다
