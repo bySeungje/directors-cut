@@ -269,7 +269,7 @@ export class VaultScene extends Phaser.Scene {
   }
 
   /** 읽기 세션 (스펙 §3.4): LLM 4초 → 실패 시 조립형 폴백. 어느 쪽이든 약속 창이 열린다 */
-  private async runSession(no: 1 | 2) {
+  private async runSession(no: 1 | 2 | 3) {
     this.phase = 'session';
     const input = this.heist.sessionInput(no);
 

@@ -46,7 +46,7 @@ export interface PatternCandidate {
 
 /** 읽기 세션 요청 페이로드 (프록시 mode: 'session') */
 export interface SessionInput {
-  sessionNo: 1 | 2;
+  sessionNo: 1 | 2 | 3;
   roundNo: number;
   choices: Door[];
   caughtHistory: boolean[];

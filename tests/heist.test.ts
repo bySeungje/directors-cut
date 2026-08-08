@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_STAKE, Heist, OBS_ROUNDS, TARGET, TOTAL_ROUNDS } from '../src/game/heist';
+import { BASE_STAKE, Heist, DEFAULT_TARGET, OBS_ROUNDS, TOTAL_ROUNDS } from '../src/game/heist';
 import { Ensemble, type DoorIdx, type TrapDecision } from '../src/game/predictor';
 
 // 판돈·라운드 상태기 검증 (스펙 §3.1~3.2, 완료 기준 4의 유닛 절반 — 밴드는 heist_gate가 본다)
@@ -126,20 +126,23 @@ describe('정산·조기 종료 (스펙 §3.1)', () => {
   });
 });
 
-describe('읽기 세션 스케줄 (스펙 §3.1 — 본게임 4R·8R 후)', () => {
-  it('본게임 4라운드 종료 직후 세션 1, 8라운드 종료 직후 세션 2', () => {
+describe('읽기 세션 스케줄 (스펙 §3.1 — 본게임 3R·6R·9R 후)', () => {
+  it('본게임 3·6·9라운드 종료 직후 세션 1·2·3', () => {
     const { heist, fake } = makeHeist();
     fake.nextTrap = 1;
     heist.playRound('L'); // 관찰
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 3; i++) {
       expect(heist.status().sessionDue).toBeNull();
       heist.playRound('L');
     }
     expect(heist.status().sessionDue).toBe(1);
     heist.markSessionDone();
     expect(heist.status().sessionDue).toBeNull();
-    for (let i = 0; i < 4; i++) heist.playRound('L');
+    for (let i = 0; i < 3; i++) heist.playRound('L');
     expect(heist.status().sessionDue).toBe(2);
+    heist.markSessionDone();
+    for (let i = 0; i < 3; i++) heist.playRound('L');
+    expect(heist.status().sessionDue).toBe(3);
     heist.markSessionDone();
     expect(heist.status().sessionDue).toBeNull();
   });
@@ -160,7 +163,7 @@ describe('리포트 입력 집계', () => {
     expect(r.bestStreak).toBe(3);
     expect(r.settleCount).toBe(1);
     expect(r.caughtByPattern.FREQ).toBe(1);
-    expect(r.target).toBe(TARGET);
+    expect(r.target).toBe(DEFAULT_TARGET);
     expect(OBS_ROUNDS + 0).toBe(1);
   });
 });

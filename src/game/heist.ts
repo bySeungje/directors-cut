@@ -7,10 +7,12 @@ export const OBS_ROUNDS = 1;
 export const MAIN_ROUNDS = 11;
 export const TOTAL_ROUNDS = OBS_ROUNDS + MAIN_ROUNDS;
 export const BASE_STAKE = 100;
-/** 목표액 — 게이트 2차(tests/heist_gate.test.ts)에서 확정. 스펙 §3.2 */
-export const TARGET = 1500;
-/** 읽기 세션 시점: 본게임 N라운드 종료 직후 (스펙 §3.1 — 4R 후·8R 후) */
-export const SESSION_AFTER_MAIN = [4, 8] as const;
+/** 목표액 — 게이트 2차 확정(2026-08-08, tests/heist_gate.test.ts 스캔): T=1000에서 4밴드 전부
+ *  성립(무전략 9.9%·역읽기 49.9%·랜덤 20.2%·심기 0.0%). 900은 역읽기 71%로 과잉, 1100+는 45% 미달 */
+export const DEFAULT_TARGET = 1000;
+/** 읽기 세션 시점: 본게임 N라운드 종료 직후. 게이트 2차에서 2회→3회로 확정 —
+ *  심기(plant)의 '한 번 뒤집기'가 다음 세션의 갱신된 선언에 즉시 노출되게 한다 */
+export const SESSION_AFTER_MAIN = [3, 6, 9] as const;
 
 export interface RoundResult {
   roundNo: number; // 1..TOTAL_ROUNDS
@@ -39,7 +41,7 @@ export interface HeistStatus {
   over: boolean;
   result: 'WIN' | 'LOSE' | null;
   endCause: EndCause | null;
-  sessionDue: 1 | 2 | null;
+  sessionDue: 1 | 2 | 3 | null;
 }
 
 export class Heist {
@@ -63,16 +65,18 @@ export class Heist {
   private sessionsDone = 0;
   private currentStrategy: Strategy = 'BALANCED';
   readonly runCount: number;
+  readonly target: number;
 
-  constructor(ensemble: Ensemble, runCount = 1) {
+  constructor(ensemble: Ensemble, runCount = 1, opts?: { target?: number }) {
     this.ensemble = ensemble;
     this.runCount = runCount;
+    this.target = opts?.target ?? DEFAULT_TARGET;
   }
 
   status(): HeistStatus {
     const mainDone = this.round - 1 - OBS_ROUNDS; // 완료된 본게임 라운드 수
     const dueIdx = !this.over && this.sessionsDone < SESSION_AFTER_MAIN.length && mainDone === SESSION_AFTER_MAIN[this.sessionsDone]
-      ? ((this.sessionsDone + 1) as 1 | 2)
+      ? ((this.sessionsDone + 1) as 1 | 2 | 3)
       : null;
     return {
       roundNo: this.round,
@@ -80,9 +84,9 @@ export class Heist {
       bank: this.bank,
       unsettled: this.unsettled,
       streak: this.streak,
-      target: TARGET,
+      target: this.target,
       over: this.over,
-      result: this.over ? (this.bank >= TARGET ? 'WIN' : 'LOSE') : null,
+      result: this.over ? (this.bank >= this.target ? 'WIN' : 'LOSE') : null,
       endCause: this.endCause,
       sessionDue: dueIdx,
     };
@@ -169,7 +173,7 @@ export class Heist {
     this.unsettled = 0;
     this.streak = 0;
     if (amount > 0) this.settleCount++;
-    if (!this.over && this.bank >= TARGET) this.finish('WIN_CONFIRMED');
+    if (!this.over && this.bank >= this.target) this.finish('WIN_CONFIRMED');
     return amount;
   }
 
@@ -178,7 +182,7 @@ export class Heist {
     const left = TOTAL_ROUNDS - this.round + 1;
     let maxFuture = 0;
     for (let i = 1; i <= left; i++) maxFuture += BASE_STAKE * (this.streak + i);
-    return this.bank + this.unsettled + maxFuture < TARGET;
+    return this.bank + this.unsettled + maxFuture < this.target;
   }
 
   private finish(cause: EndCause): void {
@@ -195,7 +199,7 @@ export class Heist {
     return this.results;
   }
 
-  sessionInput(sessionNo: 1 | 2): SessionInput {
+  sessionInput(sessionNo: 1 | 2 | 3): SessionInput {
     return {
       sessionNo,
       roundNo: this.round - 1,
@@ -204,7 +208,7 @@ export class Heist {
       bank: this.bank,
       unsettled: this.unsettled,
       streak: this.streak,
-      target: TARGET,
+      target: this.target,
       settleCount: this.settleCount,
       greedRounds: this.greedRounds,
       candidates: this.ensemble.candidates(),
@@ -220,7 +224,7 @@ export class Heist {
       earlyEnd: this.endCause === 'ROUNDS_DONE' ? null : this.endCause,
       roundsPlayed: this.results.length,
       bank: this.bank,
-      target: TARGET,
+      target: this.target,
       caughtCount: this.caughtCount(),
       bestStreak: this.bestStreak,
       settleCount: this.settleCount,

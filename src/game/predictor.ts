@@ -25,9 +25,11 @@ const ETA = 4;
 const INIT_SCORES = [0, 0.3, 0, 0, 0.3]; // 프라이어 보유 예측기(ngram1·wsls) 초기 신뢰
 const N = 2;
 
-// 반심기 트리거 (스펙 §3.3): 최근 5개 비약속 라운드 적중 ≤1 → 성적 급감쇠 + CONTRARIAN 50% 혼합
-const SANDBAG_LOOKBACK = 5;
-const SANDBAG_MAX_HITS = 1;
+// 반심기 트리거 (스펙 §3.3): 최근 2개 비약속 라운드 전패(적중 0) → 성적 급감쇠 + CONTRARIAN 50% 혼합.
+// 게이트 2차 실측으로 조임 — 5라운드 룩백은 심기→반전(4연속 확정 통과, T≤1100 승률 97.7%)이
+// 끝난 뒤에야 무장돼 무력했고, 3도 세션 사이 비약속 라운드가 2개뿐이라 못 잡는다.
+const SANDBAG_LOOKBACK = 2;
+const SANDBAG_MAX_HITS = 0;
 const SANDBAG_SCORE_DECAY = 0.5;
 const SANDBAG_CONTRA_RATE = 0.5;
 

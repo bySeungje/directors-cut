@@ -8,17 +8,22 @@ const SESSION_TAUNTS: readonly string[][] = [
   [
     '버릇은 숨긴다고 없어지지 않아.',
     '네 손이 먼저 말하고 있다.',
-    '읽는 데 4라운드면 충분했다.',
+    '읽는 데 세 판이면 충분했다.',
   ],
   [
     '아직도 같은 손버릇이군.',
     '금고가 아니라 네 머릿속을 열고 있다.',
     '슬슬 도망칠 타이밍인데. 못 하겠지.',
   ],
+  [
+    '마지막 구간이다. 네 패는 다 읽었다.',
+    '여기서부터는 자비 없다.',
+    '도망칠 문까지 계산에 넣었다.',
+  ],
 ];
 
 /** 세션 폴백: 최상위 후보의 통계를 그대로 선언한다 (읽기의 진실성은 폴백에서도 계약이다) */
-export function assembleSessionFallback(candidates: PatternCandidate[], sessionNo: 1 | 2, pick: number): SessionDirective {
+export function assembleSessionFallback(candidates: PatternCandidate[], sessionNo: 1 | 2 | 3, pick: number): SessionDirective {
   const top = candidates[0];
   const taunts = SESSION_TAUNTS[sessionNo - 1];
   return {
