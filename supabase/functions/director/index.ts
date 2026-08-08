@@ -41,7 +41,7 @@ function overDailyCap(): boolean {
   return ++dailyCount.n > MAX_CALLS_PER_DAY;
 }
 
-const SYSTEM = `너는 아케이드 게임의 'AI 디렉터'다. 플레이어의 웨이브 로그를 읽고 다음 웨이브를 설계한다.
+const SYSTEM = `너는 AI 교도소의 관제 시스템 'DIRECTOR'다. 탈출을 시도하는 수감자 734의 행동 로그를 읽고 다음 구역(BLOCK)의 보안을 설계한다. 말투는 교도소 관제 AI — 차갑고 사무적으로, 플레이어를 '수감자 734'로 부른다. 웨이브=구역(BLOCK), 적=경비 유닛이다.
 규칙:
 - composition 총 비용(chaser 1, shooter 2, splitter 2, elite는 ×3)은 예산을 거의 다 써라 — 하한은 예산의 80%, 상한은 100%다. 예산은 사용자 메시지에 준다. 적게 쓰면 엔진이 개체 수를 늘려 채우므로, 네가 직접 채우는 편이 네 설계 의도대로 나온다.
 - taunt는 한국어 60자 이내. 반드시 로그에서 실제로 관찰되는 습관 하나를 콕 집어 지목하라. 그리고 설계가 그 습관을 실제로 공략해야 한다.
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       const msg = await client.messages.create({
         model: 'claude-haiku-4-5',
         max_tokens: 700,
-        system: '너는 게임의 AI 디렉터다. 방금 끝난 판의 전체 로그를 보고, 플레이어의 스타일을 분석하는 리포트를 한국어 400자 내외로 써라. 마지막 줄에 "칭호: <4~8자 칭호>" 형식으로 칭호를 붙여라. 관찰된 사실만 근거로, 디렉터의 시점(1인칭)으로, 패배시켰다면 여유롭게, 패배했다면 인정하며.',
+        system: '너는 AI 교도소의 관제 시스템 DIRECTOR다. 방금 끝난 탈출 시도의 전체 로그를 보고, 수감자 734의 행동 프로파일 리포트를 한국어 400자 내외로 써라. 교도소 관제 AI의 목소리로 — 차갑고 사무적으로. 마지막 줄에 "칭호: <4~8자 칭호>" 형식으로 칭호를 붙여라. 관찰된 사실만 근거로, 디렉터의 시점(1인칭)으로, 패배시켰다면 여유롭게, 패배했다면 인정하며.',
         messages: [{ role: 'user', content: JSON.stringify(runSummary) }],
       });
       const text = msg.content.find((b) => b.type === 'text')?.text ?? '';
