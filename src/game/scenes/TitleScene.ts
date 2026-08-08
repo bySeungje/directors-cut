@@ -40,7 +40,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 자동 사격\n벽을 믿지 마라. 같은 탈출 루트를 반복하면 DIRECTOR가 다음 구역을 네 약점으로 바꾼다.', {
+      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · 자동 EMP 무력화\n벽을 믿지 마라. 같은 탈출 루트를 반복하면 DIRECTOR가 다음 구역을 네 약점으로 바꾼다.', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
       })
       .setOrigin(0.5);

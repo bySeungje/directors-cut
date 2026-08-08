@@ -58,8 +58,8 @@ const ENEMY_TEX_SIZE: Record<EnemyType, number> = { chaser: 40, shooter: 46, spl
 
 const BULLET_PLAYER_TEX = 'bullet-player';
 const BULLET_ENEMY_TEX = 'bullet-enemy';
-const BULLET_PLAYER_TEX_SIZE = 12;
-const BULLET_PLAYER_RADIUS = 4;
+const BULLET_PLAYER_TEX_SIZE = 18;
+const BULLET_PLAYER_RADIUS = 6;
 const BULLET_ENEMY_TEX_SIZE = 14;
 const BULLET_ENEMY_RADIUS = 5;
 
@@ -108,45 +108,47 @@ function drawHeart(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: nu
 export function generateTextures(scene: Phaser.Scene) {
   const g = scene.add.graphics();
 
-  // player: 후드 쓴 탈옥자 실루엣. 오른쪽 노치가 조준 방향(rotation 0)을 읽게 한다.
+  // player: 후드 쓴 탈옥자 실루엣. 삼각 전면 노치를 없애 "드릴/미사일"처럼 읽히지 않게 한다.
   g.clear();
   {
     const c = PLAYER_TEX_SIZE / 2;
     g.fillStyle(PLAYER_COLOR, 1);
-    g.fillTriangle(c, c - 14, c - 12, c + 8, c + 12, c + 8);
-    g.fillRoundedRect(c - 9, c + 2, 18, 14, 4);
+    g.fillRoundedRect(c - 8, c - 8, 16, 24, 6);
+    g.fillTriangle(c, c - 17, c - 12, c - 2, c + 12, c - 2);
+    g.fillRoundedRect(c - 12, c + 1, 24, 14, 5);
     g.fillStyle(0x0a0a0f, 1);
-    g.fillCircle(c, c - 3, 7);
+    g.fillCircle(c, c - 5, 7);
     g.fillStyle(PLAYER_COLOR, 0.95);
-    g.fillCircle(c, c - 4, 4);
+    g.fillCircle(c, c - 6, 4);
     g.fillStyle(0x0a0a0f, 1);
-    g.fillRect(c - 5, c - 5, 10, 2);
+    g.fillRect(c - 5, c - 7, 10, 2);
     g.lineStyle(2, 0xe8e8ec, 0.85);
     g.lineBetween(c - 8, c + 11, c + 8, c + 11);
+    g.lineStyle(2, 0x0a0a0f, 0.95);
+    g.lineBetween(c - 6, c + 15, c - 6, c + 20);
+    g.lineBetween(c + 6, c + 15, c + 6, c + 20);
+    g.lineStyle(2, 0xe8e8ec, 0.65);
+    g.lineBetween(c - 13, c + 5, c - 18, c + 9);
+    g.lineBetween(c + 13, c + 5, c + 18, c + 9);
   }
-  g.fillTriangle(
-    PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS + 7, PLAYER_TEX_SIZE / 2,
-    PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS - 2, PLAYER_TEX_SIZE / 2 - 6,
-    PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS - 2, PLAYER_TEX_SIZE / 2 + 6,
-  );
   g.generateTexture(PLAYER_TEX, PLAYER_TEX_SIZE, PLAYER_TEX_SIZE);
 
-  // chaser: 방패를 든 경비 로봇. 삼각형 느낌을 줄이고 전면 장갑과 다리로 실루엣을 만든다.
+  // chaser: 방패를 든 경비 로봇. 옆으로 튀어나온 전면 장갑을 줄여 탱크처럼 보이는 문제를 피한다.
   g.clear();
   g.fillStyle(ENEMY_COLOR, 1);
   {
     const s = ENEMY_DEF.chaser.size;
     const c = ENEMY_TEX_SIZE.chaser / 2;
-    g.fillRoundedRect(c - s * 0.65, c - s * 0.82, s * 1.3, s * 1.58, 4);
-    g.fillRoundedRect(c + s * 0.2, c - s * 0.58, s * 0.72, s * 1.16, 3);
+    g.fillRoundedRect(c - s * 0.72, c - s * 0.82, s * 1.44, s * 1.58, 4);
+    g.fillRoundedRect(c + s * 0.46, c - s * 0.42, s * 0.34, s * 0.84, 3);
     g.fillStyle(0x0a0a0f, 1);
-    g.fillRect(c - s * 0.45, c - s * 0.4, s * 0.72, 3);
-    g.fillRect(c + s * 0.36, c - s * 0.28, s * 0.2, s * 0.56);
+    g.fillRect(c - s * 0.42, c - s * 0.42, s * 0.84, 3);
+    g.fillRect(c + s * 0.54, c - s * 0.22, s * 0.12, s * 0.44);
     g.lineStyle(2, 0x0a0a0f, 0.85);
-    g.lineBetween(c - s * 0.45, c + s * 0.8, c - s * 0.45, c + s * 1.02);
-    g.lineBetween(c + s * 0.25, c + s * 0.8, c + s * 0.25, c + s * 1.02);
+    g.lineBetween(c - s * 0.42, c + s * 0.8, c - s * 0.42, c + s * 1.02);
+    g.lineBetween(c + s * 0.42, c + s * 0.8, c + s * 0.42, c + s * 1.02);
     g.lineStyle(1, 0xe8e8ec, 0.45);
-    g.strokeRect(c + s * 0.28, c - s * 0.48, s * 0.52, s * 0.96);
+    g.strokeRoundedRect(c + s * 0.46, c - s * 0.42, s * 0.34, s * 0.84, 3);
   }
   g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
 
@@ -188,16 +190,27 @@ export function generateTextures(scene: Phaser.Scene) {
   }
   g.generateTexture(ENEMY_TEX.splitter, ENEMY_TEX_SIZE.splitter, ENEMY_TEX_SIZE.splitter);
 
-  // 플레이어 탄
+  // 플레이어 EMP 펄스 — 물리적 탄환/미사일이 아니라 보안 봇을 무력화하는 작은 링.
   g.clear();
-  g.fillStyle(PLAYER_COLOR, 1);
-  g.fillCircle(BULLET_PLAYER_TEX_SIZE / 2, BULLET_PLAYER_TEX_SIZE / 2, BULLET_PLAYER_RADIUS);
+  {
+    const c = BULLET_PLAYER_TEX_SIZE / 2;
+    g.lineStyle(2, 0x72d7ff, 0.95).strokeCircle(c, c, BULLET_PLAYER_RADIUS);
+    g.lineStyle(1, PLAYER_COLOR, 0.85).strokeCircle(c, c, BULLET_PLAYER_RADIUS - 3);
+    g.fillStyle(0x72d7ff, 0.75);
+    g.fillCircle(c, c, 2);
+  }
   g.generateTexture(BULLET_PLAYER_TEX, BULLET_PLAYER_TEX_SIZE, BULLET_PLAYER_TEX_SIZE);
 
-  // 적탄 (마름모 — 사각형 shooter와 형태로 연결)
+  // 적 보안 펄스 — 드론이 쏘는 비살상 스턴 신호.
   g.clear();
-  g.fillStyle(ENEMY_COLOR, 1);
-  drawDiamond(g, BULLET_ENEMY_TEX_SIZE / 2, BULLET_ENEMY_TEX_SIZE / 2, BULLET_ENEMY_RADIUS);
+  {
+    const c = BULLET_ENEMY_TEX_SIZE / 2;
+    g.lineStyle(2, ENEMY_COLOR, 0.9);
+    g.lineBetween(c - 5, c, c + 5, c);
+    g.lineBetween(c, c - 5, c, c + 5);
+    g.fillStyle(ENEMY_COLOR, 0.9);
+    g.fillCircle(c, c, 3);
+  }
   g.generateTexture(BULLET_ENEMY_TEX, BULLET_ENEMY_TEX_SIZE, BULLET_ENEMY_TEX_SIZE);
 
   // HUD 하트 (무채색 — HP는 디렉터 요소가 아니므로 레드 금지)

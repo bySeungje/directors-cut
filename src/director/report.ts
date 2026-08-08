@@ -91,8 +91,8 @@ function staticReport(s: RunSummary): string {
   const title = pickFallbackTitle(s);
   const body =
     s.result === 'WIN'
-      ? `인정한다. ${s.wavesReached}개 보안 구역을 전부 돌파했다. 이번 탈출에서 ${s.totalKills}기를 처리했고 명중률은 ${accuracyPct}%였다. 대시 ${s.totalDashCount}회, 판단은 나쁘지 않았다. 다음 시설은 이렇게 열어두지 않겠다.`
-      : `봉쇄 완료. ${s.wavesReached}번째 보안 구역에서 탈출이 중단됐다. ${s.totalKills}기를 처리하고 명중률 ${accuracyPct}%를 기록했지만, 중앙 통제실에는 닿지 못했다. 대시 ${s.totalDashCount}회 — 다음 시도에서는 그 습관부터 봉쇄하겠다.`;
+      ? `인정한다. ${s.wavesReached}개 보안 구역을 전부 돌파했다. 이번 탈출에서 보안 유닛 ${s.totalKills}기를 무력화했고 EMP 적중률은 ${accuracyPct}%였다. 대시 ${s.totalDashCount}회, 판단은 나쁘지 않았다. 다음 시설은 이렇게 열어두지 않겠다.`
+      : `봉쇄 완료. ${s.wavesReached}번째 보안 구역에서 탈출이 중단됐다. 보안 유닛 ${s.totalKills}기를 무력화하고 EMP 적중률 ${accuracyPct}%를 기록했지만, 중앙 통제실에는 닿지 못했다. 대시 ${s.totalDashCount}회 — 다음 시도에서는 그 습관부터 봉쇄하겠다.`;
   // 읽기 대결 결과는 승패와 별개 축이라 한 문장을 따로 붙인다. 판정이 한 번도 없었으면 생략한다
   // (잘 움직여서 읽을 습관이 없었던 런 — 그것 자체가 디렉터에게 할 말이 된다).
   const v = s.verdicts;
