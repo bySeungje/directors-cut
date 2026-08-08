@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
-import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -10,14 +10,32 @@ export const BASE_STATS: PlayerStats = {
   damage: 1, fireRateMs: 280, moveSpeed: 220, bulletSpeed: 480, pierce: 0, multishot: 1, dashCooldownMs: 2000, maxHp: 5,
 };
 
+/**
+ * ⚠ 이 속도들은 플레이어 이속 220과의 **비율**이 전부다.
+ *
+ * 2026-08-08 실측(승제, 7웨이브 2회 클리어에 피격 1): 90 대 220은 2.4배 차이라 추격형이 움직이는
+ * 플레이어를 **원리적으로** 못 잡는다. 물량을 아무리 늘려도 그냥 지나쳐 갈 뿐이라, 예산 곡선을
+ * 올리는 것으로는 이 문제가 고쳐지지 않는다(못 잡는 적이 많아질 뿐이다).
+ *
+ * 125로 올려도 여전히 플레이어가 빠르다(1.76배) — 도망은 되지만 **방향을 꺾을 때마다 거리가 줄어든다.**
+ * 강화 카드 상한도 확인: RELENTLESS(×1.45) 적용 시 181, elite(×1.15) 적용 시 144로 둘 다 220 미만이라
+ * "따라잡혀서 아무것도 못 함"은 발생하지 않는다.
+ */
 export const ENEMY_DEF: Record<EnemyType, { hp: number; speed: number; size: number }> = {
-  chaser:   { hp: 2, speed: 90,  size: 14 },
+  chaser:   { hp: 2, speed: 125, size: 14 },
   shooter:  { hp: 3, speed: 60,  size: 15 },
-  splitter: { hp: 3, speed: 75,  size: 16 },
+  splitter: { hp: 3, speed: 100, size: 16 },
 };
 
 // 적탄 이동속도 — 브리프에 수치 없음. 플레이어 기본 탄속(480)보다 느리게 잡아 회피 가능하게 함(재량 결정).
-export const ENEMY_BULLET_SPEED = 220;
+/** 적 탄속. 220은 플레이어 이속과 **정확히 같아서**, 선행 조준을 넣어도 방향만 바꾸면 무조건 빠졌다.
+ *  320이면 선행이 의미를 갖되 급선회로는 여전히 흘릴 수 있다(2026-08-08 재설계). */
+export const ENEMY_BULLET_SPEED = 320;
+
+/** shooter 선행 조준 상한(초). 행동 카드의 INTERCEPT와 같은 사고 — 멀수록 더 앞을 보되 과예측은 막는다. */
+const SHOOTER_LEAD_MAX_SEC = 0.9;
+/** 선행 조준에 섞는 오차(rad). 완벽한 예측이 아니라 **페인트가 통하는 수준**이 설계 의도다. */
+const SHOOTER_AIM_JITTER_RAD = 0.10;
 
 // ── 비주얼 상수 (스펙 3.5: 무채색 엔티티, 레드는 디렉터/엘리트 전용) ─────────
 // PLAYER_COLOR/ENEMY_COLOR/ELITE_COLOR는 export도 한다 — juice.ts의 킬 파편·대시 잔상 틴트가
@@ -433,8 +451,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) {
       this.lastFireAt = time;
-      fireEnemyBullet(this.x, this.y, angleToPlayer, 'shooter');
+      fireEnemyBullet(this.x, this.y, this.aimAngle(player, dist), 'shooter');
     }
+  }
+
+  /**
+   * 탄이 도착할 지점을 향해 쏜다.
+   *
+   * 기존에는 `angleToPlayer`(현재 위치)로 쐈다. 탄속이 플레이어 이속과 같아서, 260px 거리면 비행
+   * 1.18초 동안 플레이어가 260px를 이동하는데 판정 반경은 16px이다 — **빗나가는 게 아니라 조준이
+   * 성립하지 않았다.** 움직이기만 하면 shooter 전체가 무해했고, 그래서 7웨이브를 피격 1로 깰 수 있었다.
+   *
+   * 완벽한 요격은 만들지 않는다. 상한(0.9초)과 오차(±0.1rad)를 둬서 **급선회하면 빠지게** 한다 —
+   * 행동 카드 INTERCEPT와 같은 설계 의도다(스펙 §3.4.2 "페인트가 통하는 수준").
+   */
+  private aimAngle(player: Player, dist: number): number {
+    const speed = buffedBulletSpeed(ENEMY_BULLET_SPEED);
+    const lead = Math.min(dist / speed, SHOOTER_LEAD_MAX_SEC);
+    const px = Phaser.Math.Clamp(player.x + player.body.velocity.x * lead, 0, this.scene.scale.width);
+    const py = Phaser.Math.Clamp(player.y + player.body.velocity.y * lead, 0, this.scene.scale.height);
+    const jitter = (Math.random() - 0.5) * 2 * SHOOTER_AIM_JITTER_RAD;
+    return Phaser.Math.Angle.Between(this.x, this.y, px, py) + jitter;
   }
 }
 

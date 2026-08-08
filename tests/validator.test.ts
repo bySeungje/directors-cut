@@ -112,9 +112,13 @@ describe('예산 하한 (fillToBudgetFloor)', () => {
   const floorOf = (w: number) => Math.floor(budgetFor(w) * BUDGET_FLOOR_RATIO);
   const total = (c: ReturnType<typeof fillToBudgetFloor>) => c.reduce((s, x) => s + costOf(x), 0);
 
+  // 곡선 수치에 묶지 않는다 — 예산은 재조정되는 값이고, 단언해야 할 것은 "하한을 이미 넘겼으면
+  // 손대지 않는다"는 성질이다(2026-08-08 곡선 재설계 때 이 테스트가 수치 때문에 깨졌다).
   it('하한 이상이면 구성을 그대로 둔다', () => {
-    const full = [{ type: 'chaser' as const, count: 30, spawn: 'N' as const, elite: false }];
-    expect(fillToBudgetFloor(full, 5, 'NONE')).toEqual(full);
+    for (let w = 1; w <= 7; w++) {
+      const atFloor = [{ type: 'chaser' as const, count: budgetFor(w), spawn: 'N' as const, elite: false }];
+      expect(fillToBudgetFloor(atFloor, w, 'NONE')).toEqual(atFloor);
+    }
   });
 
   it('모든 웨이브에서 하한을 채우고 상한을 넘지 않는다', () => {
@@ -209,14 +213,16 @@ describe('강화 카드', () => {
     expect(buffCostOf('TOUGH', 3)).toBe(Math.round(budgetFor(3) * 0.25));
     expect(buffCostOf('SWIFT', 7)).toBe(Math.round(budgetFor(7) * 0.25));
   });
+  // 곡선 수치를 하드코딩하지 않는다 — 예산은 재조정되는 값이다(2026-08-08 재설계 때 깨졌다).
   it('buff 비용이 예산에 합산돼 초과분이 축소된다', () => {
-    // 웨이브 3 예산 20, buff 비용 5 → composition 상한은 15
-    const near = { ...ok, composition: [{ type: 'chaser', count: 16, spawn: 'N', elite: false }], buff: 'TOUGH' };
-    const v = validateDirective(near, 3, 'NONE', 'NONE', 'NONE');
-    expect(v).not.toBeNull();
-    expect(v!.composition.reduce((s, c) => s + costOf(c), 0)).toBeLessThanOrEqual(budgetFor(3) - buffCostOf('TOUGH', 3));
-    const fits = { ...ok, composition: [{ type: 'chaser', count: 15, spawn: 'N', elite: false }], buff: 'TOUGH' };
-    expect(validateDirective(fits, 3, 'NONE', 'NONE', 'NONE')!.composition[0].count).toBe(15);
+    for (let w = 1; w <= 7; w++) {
+      const cap = budgetFor(w) - buffCostOf('TOUGH', w);
+      // 스키마 상한(count ≤ 30) 안에서 모든 웨이브의 상한을 넘기려면 elite를 쓴다(30 × 3 = 90점).
+      const over = { ...ok, composition: [{ type: 'chaser', count: 30, spawn: 'N', elite: true }], buff: 'TOUGH' };
+      const v = validateDirective(over, w, 'NONE', 'NONE', 'NONE');
+      expect(v).not.toBeNull();
+      expect(v!.composition.reduce((s, c) => s + costOf(c), 0)).toBeLessThanOrEqual(cap);
+    }
   });
   it('buff 없이는 예산 전액을 composition에 쓸 수 있다', () => {
     const full = { ...ok, composition: [{ type: 'chaser', count: 20, spawn: 'N', elite: false }], buff: 'NONE' };
