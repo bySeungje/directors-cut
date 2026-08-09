@@ -84,6 +84,8 @@ const MULTISHOT_SPREAD_DEG = 12;
 const SHOOTER_FIRE_INTERVAL_MS = 1600;
 const BULLET_LIFETIME_MS = 1500;
 const PATROL_POINT_EPS = 18;
+const PATROL_STUCK_MS = 720;
+const PURSUIT_STUCK_MS = 560;
 const GUARD_ALERT_MS = 1450;
 const GUARD_SIGHT_RANGE = 215;
 const GUARD_SIGHT_FOV = Phaser.Math.DegToRad(92);
@@ -400,6 +402,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private alertUntil = 0;
   private patrolRoute: PatrolPoint[] = [];
   private patrolIndex = 0;
+  private lastPatrolDistance = Infinity;
+  private patrolStuckSince = 0;
+  private lastMoveDistance = Infinity;
+  private moveStuckSince = 0;
   private scanBaseAngle = 0;
   /** ENCIRCLE 포위 지점의 고유 각도 슬롯 — 황금각 분산으로 인접 스폰이 같은 방향을 잡지 않는다. */
   private slotAngle = 0;
@@ -436,6 +442,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.alertUntil = 0;
     this.patrolRoute = [];
     this.patrolIndex = 0;
+    this.lastPatrolDistance = Infinity;
+    this.patrolStuckSince = 0;
+    this.lastMoveDistance = Infinity;
+    this.moveStuckSince = 0;
     this.scanBaseAngle = this.slotAngle;
     this.setActive(true).setVisible(true);
     this.body.enable = true;
@@ -445,6 +455,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   setPatrolRoute(points: PatrolPoint[]) {
     this.patrolRoute = points.map((p) => ({ x: p.x, y: p.y }));
     this.patrolIndex = 0;
+    this.lastPatrolDistance = Infinity;
+    this.patrolStuckSince = 0;
+    this.lastMoveDistance = Infinity;
+    this.moveStuckSince = 0;
     this.scanBaseAngle = this.patrolRoute.length > 1
       ? Phaser.Math.Angle.Between(this.patrolRoute[0].x, this.patrolRoute[0].y, this.patrolRoute[1].x, this.patrolRoute[1].y)
       : this.slotAngle;
@@ -497,8 +511,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       if (seesPlayer && isEvasive()) this.updateEvasive(time, player);
       else if (seesPlayer && isEncircle()) this.updateEncircle(time, player);
       else if (seesPlayer && isIntercept()) this.updateIntercept(player);
-      else this.scene.physics.moveTo(this, target.x, target.y, this.moveSpeed);
-      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y));
+      else this.moveTowardPoint(time, target, this.moveSpeed);
       return;
     }
 
@@ -509,13 +522,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const seesPlayer = context.canSeePlayer?.(this, RELAY_SIGHT_RANGE, RELAY_SIGHT_FOV) ?? false;
     if (seesPlayer) {
       this.alertUntil = time + GUARD_ALERT_MS * 0.75;
-      this.scene.physics.moveToObject(this, player, this.moveSpeed * 0.72);
-      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
+      this.moveTowardPoint(time, player, this.moveSpeed * 0.72);
       return;
     }
     if (time < this.alertUntil && context.investigationPoint) {
-      this.scene.physics.moveTo(this, context.investigationPoint.x, context.investigationPoint.y, this.moveSpeed * 0.52);
-      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, context.investigationPoint.x, context.investigationPoint.y));
+      this.moveTowardPoint(time, context.investigationPoint, this.moveSpeed * 0.52);
       return;
     }
 
@@ -535,12 +546,32 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const target = this.patrolRoute[this.patrolIndex % this.patrolRoute.length];
     const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
     if (dist < PATROL_POINT_EPS) {
-      this.patrolIndex = (this.patrolIndex + 1) % this.patrolRoute.length;
-      this.body.setVelocity(0, 0);
+      this.advancePatrolPoint();
       return;
     }
+
+    const blocked = !this.body.blocked.none || !this.body.touching.none;
+    const improving = dist < this.lastPatrolDistance - 1.5;
+    if (improving || !blocked) {
+      this.lastPatrolDistance = dist;
+      if (!blocked) this.patrolStuckSince = 0;
+    } else if (blocked) {
+      if (this.patrolStuckSince === 0) this.patrolStuckSince = time;
+      if (time - this.patrolStuckSince >= PATROL_STUCK_MS) {
+        this.advancePatrolPoint();
+        return;
+      }
+    }
+
     this.scene.physics.moveTo(this, target.x, target.y, speed);
     this.setRotation(Math.atan2(this.body.velocity.y, this.body.velocity.x));
+  }
+
+  private advancePatrolPoint() {
+    this.patrolIndex = (this.patrolIndex + 1) % this.patrolRoute.length;
+    this.lastPatrolDistance = Infinity;
+    this.patrolStuckSince = 0;
+    this.body.setVelocity(0, 0);
   }
 
   /** 플레이어가 "가려는 곳"을 노린다. 방향을 급히 꺾으면 빗나간다 — 페인트가 통해야 한다(스펙 §3.4.2). */
@@ -601,8 +632,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.body.setVelocity(0, 0);
       this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
     } else if (time < this.alertUntil && context.investigationPoint) {
-      this.scene.physics.moveTo(this, context.investigationPoint.x, context.investigationPoint.y, this.moveSpeed * 0.74);
-      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, context.investigationPoint.x, context.investigationPoint.y));
+      this.moveTowardPoint(time, context.investigationPoint, this.moveSpeed * 0.74);
     } else {
       this.updatePatrol(time, this.moveSpeed * 0.86);
       if (this.body.velocity.lengthSq() < 4) {
@@ -611,6 +641,29 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) this.lastFireAt = time;
+  }
+
+  private moveTowardPoint(time: number, target: PatrolPoint, speed: number) {
+    const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+    const blocked = !this.body.blocked.none || !this.body.touching.none;
+    const improving = dist < this.lastMoveDistance - 1.5;
+    if (improving || !blocked) {
+      this.lastMoveDistance = dist;
+      if (!blocked) this.moveStuckSince = 0;
+    } else if (blocked) {
+      if (this.moveStuckSince === 0) this.moveStuckSince = time;
+      if (time - this.moveStuckSince >= PURSUIT_STUCK_MS) {
+        const base = Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y);
+        const side = Math.sin(this.slotAngle) >= 0 ? 1 : -1;
+        const angle = base + side * Math.PI / 2;
+        this.scene.physics.velocityFromRotation(angle, speed * 0.72, this.body.velocity);
+        this.setRotation(angle);
+        return;
+      }
+    }
+
+    this.scene.physics.moveTo(this, target.x, target.y, speed);
+    this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y));
   }
 
 }

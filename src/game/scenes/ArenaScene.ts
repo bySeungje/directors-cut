@@ -57,6 +57,7 @@ const CAMERA_FRAME_MARGIN_Y = 82;
 const PRIORITY_TARGET_COUNT = 3;
 const EXIT_ZONE_RADIUS = 26;
 const WALL_HEIGHT = 14;
+const PATROL_DETOUR_MARGIN = 46;
 
 type StageRule = 'NONE' | 'SEARCHLIGHT' | 'SURVEILLANCE_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_LOCKDOWN' | 'FINAL_CORE';
 
@@ -75,7 +76,7 @@ interface SectorLayout {
   patrols: { x: number; y: number }[][];
 }
 
-type PropKind = 'cell' | 'searchlight' | 'camera' | 'relay' | 'scorch' | 'compressor' | 'server' | 'vent' | 'pipe' | 'doorPanel';
+type PropKind = 'cell' | 'searchlight' | 'camera' | 'relay' | 'scorch' | 'compressor' | 'server' | 'vent' | 'pipe' | 'doorPanel' | 'rack' | 'crate' | 'forklift' | 'checkpoint';
 interface PropSpec { kind: PropKind; x: number; y: number; w?: number; h?: number; r?: number }
 interface SecuritySensor {
   type: 'cctv' | 'relay';
@@ -205,45 +206,45 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
 
 const SECTOR_STORIES: Record<number, SectorStory> = {
   1: {
-    title: 'BLOCK 01 · 수감동 이탈',
-    objective: '경비 시야를 피해 첫 보안문까지 이동',
-    directorLine: '수감자 734, 탈출 시도 확인. 시선 회피 패턴 기록을 시작한다.',
+    title: 'BLOCK 01 · 물류 수감동',
+    objective: '철제 선반과 격리 컨테이너 사이로 첫 보안문까지 이동',
+    directorLine: '수감자 734, 물류 수감동 출입 기록을 잠근다.',
     rule: 'NONE',
   },
   2: {
-    title: 'BLOCK 02 · 탐조등 구역',
-    objective: `탐조등 안에서 ${SPOTLIGHT_HOLD_SEC}초 신원 교란 후 출구로 이동`,
-    directorLine: '어둠 속 루트는 닫았다. 빛 안에서만 보안문이 열린다.',
+    title: 'BLOCK 02 · 하역장 탐조등',
+    objective: `하역장 탐조등 안에서 ${SPOTLIGHT_HOLD_SEC}초 신원 교란 후 출구로 이동`,
+    directorLine: '하역 라인을 폐쇄한다. 빛 안에서만 신원 오차가 난다.',
     rule: 'SEARCHLIGHT',
   },
   3: {
-    title: 'BLOCK 03 · 감시 프레임',
-    objective: '감시 프레임 안에서 드론 시야를 피해 출구로 이동',
-    directorLine: '시야 밖 탈출 루트는 폐쇄한다.',
+    title: 'BLOCK 03 · CCTV 적재 통로',
+    objective: '카메라 레일과 드론 시야를 피해 적재 통로를 통과',
+    directorLine: '선반 사이 사각지대까지 카메라 레일로 덮는다.',
     rule: 'SURVEILLANCE_FRAME',
   },
   4: {
-    title: 'BLOCK 04 · 락다운 릴레이',
-    objective: '락다운 릴레이의 붉은 감시망을 피해 보안문까지 이동',
-    directorLine: '문은 열어두겠다. 대신 모든 릴레이가 너를 본다.',
+    title: 'BLOCK 04 · 검문 게이트',
+    objective: '검문 릴레이의 붉은 감시망을 피해 보안문까지 이동',
+    directorLine: '문은 열어두겠다. 대신 모든 게이트가 너를 본다.',
     rule: 'PRIORITY_TARGETS',
   },
   5: {
-    title: 'BLOCK 05 · 루트 소각',
-    objective: 'DIRECTOR가 읽은 반복 동선을 버리고 다른 길로 탈출',
-    directorLine: '네가 반복한 경로를 전기 바닥으로 바꿨다.',
+    title: 'BLOCK 05 · 폐기물 소각 라인',
+    objective: 'DIRECTOR가 읽은 반복 동선을 버리고 다른 컨베이어 길로 탈출',
+    directorLine: '네가 반복한 적재 경로를 소각 라인으로 바꿨다.',
     rule: 'HOTSPOT_LOCKDOWN',
   },
   6: {
-    title: 'BLOCK 06 · 압축 수용동',
-    objective: '좁아진 보안 구역에서 시야 틈을 찾아 출구로 이동',
-    directorLine: '이동 가능 면적을 축소한다. 탈출 확률을 다시 계산한다.',
+    title: 'BLOCK 06 · 압축 보관고',
+    objective: '좁아진 컨테이너 보관고에서 시야 틈을 찾아 출구로 이동',
+    directorLine: '적재 공간을 압축한다. 탈출 확률을 다시 계산한다.',
     rule: 'SURVEILLANCE_FRAME',
   },
   7: {
-    title: 'CORE 07 · 중앙 통제실',
-    objective: '중앙 감시망을 뚫고 마지막 출구로 이동',
-    directorLine: '최종 봉쇄다. 네 탈출 기록은 여기서 끝난다.',
+    title: 'CORE 07 · 물류 관제 코어',
+    objective: '중앙 감시망과 자동 분류 서버를 뚫고 마지막 출구로 이동',
+    directorLine: '최종 봉쇄다. 네 출고 기록은 여기서 폐기된다.',
     rule: 'FINAL_CORE',
   },
 };
@@ -251,12 +252,18 @@ const SECTOR_STORIES: Record<number, SectorStory> = {
 const SECTOR_PROPS: Record<number, PropSpec[]> = {
   1: [
     { kind: 'cell', x: 128, y: 144 }, { kind: 'cell', x: 128, y: 228 },
+    { kind: 'rack', x: 290, y: 421, w: 238, h: 28 },
+    { kind: 'crate', x: 402, y: 352, w: 58, h: 42 },
+    { kind: 'checkpoint', x: 858, y: 92, w: 70 },
     { kind: 'vent', x: 412, y: 500, w: 78, h: 18 },
     { kind: 'pipe', x: 650, y: 118, w: 170 },
     { kind: 'doorPanel', x: 828, y: 126 },
   ],
   2: [
     { kind: 'searchlight', x: 480, y: 320, r: 118 },
+    { kind: 'forklift', x: 342, y: 502, w: 76, h: 48 },
+    { kind: 'rack', x: 454, y: 398, w: 250, h: 28 },
+    { kind: 'crate', x: 742, y: 220, w: 66, h: 48 },
     { kind: 'pipe', x: 236, y: 548, w: 190 },
     { kind: 'camera', x: 706, y: 116, r: Math.PI / 2 },
     { kind: 'vent', x: 824, y: 486, w: 62, h: 18 },
@@ -264,6 +271,9 @@ const SECTOR_PROPS: Record<number, PropSpec[]> = {
   3: [
     { kind: 'camera', x: 322, y: 218, r: 0.35 },
     { kind: 'camera', x: 780, y: 384, r: -2.4 },
+    { kind: 'rack', x: 456, y: 154, w: 292, h: 28 },
+    { kind: 'crate', x: 760, y: 270, w: 74, h: 46 },
+    { kind: 'checkpoint', x: 864, y: 544, w: 78 },
     { kind: 'doorPanel', x: 842, y: 508 },
     { kind: 'pipe', x: 120, y: 116, w: 160 },
     { kind: 'vent', x: 518, y: 516, w: 88, h: 18 },
@@ -271,12 +281,19 @@ const SECTOR_PROPS: Record<number, PropSpec[]> = {
   4: [
     { kind: 'relay', x: 222, y: 332 }, { kind: 'relay', x: 738, y: 332 },
     { kind: 'relay', x: 480, y: 112 },
+    { kind: 'checkpoint', x: 480, y: 548, w: 96 },
+    { kind: 'checkpoint', x: 480, y: 76, w: 96 },
+    { kind: 'crate', x: 320, y: 420, w: 54, h: 84 },
+    { kind: 'crate', x: 640, y: 420, w: 54, h: 84 },
     { kind: 'camera', x: 480, y: 424, r: -Math.PI / 2 },
     { kind: 'pipe', x: 360, y: 560, w: 240 },
   ],
   5: [
     { kind: 'scorch', x: 200, y: 320, w: 150, h: 50 },
     { kind: 'scorch', x: 790, y: 320, w: 130, h: 48 },
+    { kind: 'rack', x: 508, y: 322, w: 286, h: 28 },
+    { kind: 'forklift', x: 116, y: 238, w: 64, h: 42 },
+    { kind: 'checkpoint', x: 868, y: 320, w: 74 },
     { kind: 'doorPanel', x: 846, y: 296 },
     { kind: 'vent', x: 510, y: 454, w: 112, h: 18 },
     { kind: 'camera', x: 514, y: 190, r: Math.PI / 2 },
@@ -284,6 +301,9 @@ const SECTOR_PROPS: Record<number, PropSpec[]> = {
   6: [
     { kind: 'compressor', x: 306, y: 318, w: 78, h: 74 },
     { kind: 'compressor', x: 684, y: 318, w: 78, h: 74 },
+    { kind: 'rack', x: 394, y: 112, w: 276, h: 28 },
+    { kind: 'crate', x: 632, y: 292, w: 94, h: 42 },
+    { kind: 'checkpoint', x: 862, y: 88, w: 74 },
     { kind: 'camera', x: 838, y: 118, r: Math.PI },
     { kind: 'pipe', x: 470, y: 584, w: 280 },
     { kind: 'vent', x: 118, y: 118, w: 84, h: 18 },
@@ -291,6 +311,8 @@ const SECTOR_PROPS: Record<number, PropSpec[]> = {
   7: [
     { kind: 'server', x: 306, y: 326, w: 72, h: 96 },
     { kind: 'server', x: 654, y: 326, w: 72, h: 96 },
+    { kind: 'rack', x: 480, y: 322, w: 30, h: 260 },
+    { kind: 'checkpoint', x: 480, y: 76, w: 100 },
     { kind: 'relay', x: 480, y: 138 },
     { kind: 'camera', x: 480, y: 488, r: -Math.PI / 2 },
     { kind: 'doorPanel', x: 480, y: 104 },
@@ -816,7 +838,8 @@ export class ArenaScene extends Phaser.Scene {
     const route = layout.patrols[(this.patrolAssignSeq + preferred) % layout.patrols.length];
     this.patrolAssignSeq++;
     const start = this.nearestPassablePoint(x, y, route[0] ?? layout.start);
-    return this.adaptPatrolRouteToLastRun(type, [start, ...route]);
+    const adapted = this.adaptPatrolRouteToLastRun(type, [start, ...route]);
+    return this.expandPatrolRouteAroundWalls(adapted);
   }
 
   private nearestPassablePoint(x: number, y: number, fallback: { x: number; y: number }): { x: number; y: number } {
@@ -872,6 +895,68 @@ export class ArenaScene extends Phaser.Scene {
     return fallback;
   }
 
+  private expandPatrolRouteAroundWalls(route: { x: number; y: number }[]): { x: number; y: number }[] {
+    if (route.length < 2) return route;
+    let expanded = route.map((p) => this.nearestPassablePoint(p.x, p.y, p));
+
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      const next: { x: number; y: number }[] = [expanded[0]];
+      for (let i = 1; i < expanded.length; i++) {
+        const from = next[next.length - 1];
+        const to = expanded[i];
+        if (this.segmentHitsWall(from.x, from.y, to.x, to.y)) {
+          const detour = this.bestDetourPoint(from, to);
+          if (detour) {
+            next.push(detour);
+            changed = true;
+          }
+        }
+        next.push(to);
+      }
+      expanded = next;
+      if (!changed) break;
+    }
+
+    return expanded.filter((p, i, arr) => i === 0 || Phaser.Math.Distance.Between(p.x, p.y, arr[i - 1].x, arr[i - 1].y) > 10);
+  }
+
+  private bestDetourPoint(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number } | null {
+    const wall = this.firstBlockingWall(from.x, from.y, to.x, to.y);
+    if (!wall) return null;
+    const candidates = this.detourCandidates(wall);
+    let best: { p: { x: number; y: number }; cost: number } | null = null;
+
+    for (const p of candidates) {
+      if (this.pointInsideWall(p.x, p.y)) continue;
+      if (this.segmentHitsWall(from.x, from.y, p.x, p.y)) continue;
+      if (this.segmentHitsWall(p.x, p.y, to.x, to.y)) continue;
+      const cost = Phaser.Math.Distance.Between(from.x, from.y, p.x, p.y) + Phaser.Math.Distance.Between(p.x, p.y, to.x, to.y);
+      if (!best || cost < best.cost) best = { p, cost };
+    }
+
+    return best?.p ?? this.passableNear({
+      x: to.x < wall.x ? wall.x - wall.w / 2 - PATROL_DETOUR_MARGIN : wall.x + wall.w / 2 + PATROL_DETOUR_MARGIN,
+      y: to.y < wall.y ? wall.y - wall.h / 2 - PATROL_DETOUR_MARGIN : wall.y + wall.h / 2 + PATROL_DETOUR_MARGIN,
+    }, to);
+  }
+
+  private detourCandidates(wall: WallSpec): { x: number; y: number }[] {
+    const l = wall.x - wall.w / 2 - PATROL_DETOUR_MARGIN;
+    const r = wall.x + wall.w / 2 + PATROL_DETOUR_MARGIN;
+    const t = wall.y - wall.h / 2 - PATROL_DETOUR_MARGIN;
+    const b = wall.y + wall.h / 2 + PATROL_DETOUR_MARGIN;
+    const cx = wall.x;
+    const cy = wall.y;
+    return [
+      { x: l, y: t }, { x: r, y: t }, { x: l, y: b }, { x: r, y: b },
+      { x: l, y: cy }, { x: r, y: cy }, { x: cx, y: t }, { x: cx, y: b },
+    ].map((p) => ({
+      x: Phaser.Math.Clamp(p.x, 48, this.scale.width - 48),
+      y: Phaser.Math.Clamp(p.y, 48, this.scale.height - 48),
+    }));
+  }
+
   private enemyHasPlayerLineOfSight(enemy: Enemy, range: number, fov: number): boolean {
     if (this.time.now < this.waveEntryGraceUntil) return false;
     const dx = this.player.x - enemy.x;
@@ -890,6 +975,11 @@ export class ArenaScene extends Phaser.Scene {
   private segmentHitsWall(x1: number, y1: number, x2: number, y2: number): boolean {
     const line = new Phaser.Geom.Line(x1, y1, x2, y2);
     return this.sectorLayout().walls.some((wall) => Phaser.Geom.Intersects.LineToRectangle(line, this.wallRect(wall)));
+  }
+
+  private firstBlockingWall(x1: number, y1: number, x2: number, y2: number): WallSpec | null {
+    const line = new Phaser.Geom.Line(x1, y1, x2, y2);
+    return this.sectorLayout().walls.find((wall) => Phaser.Geom.Intersects.LineToRectangle(line, this.wallRect(wall))) ?? null;
   }
 
   private rayEndBeforeWall(x: number, y: number, angle: number, range: number): { x: number; y: number } {
@@ -994,6 +1084,18 @@ export class ArenaScene extends Phaser.Scene {
       case 'doorPanel':
         this.drawDoorPanelProp(g, p.x, p.y);
         break;
+      case 'rack':
+        this.drawRackProp(g, p.x, p.y, p.w ?? 160, p.h ?? 28);
+        break;
+      case 'crate':
+        this.drawCrateProp(g, p.x, p.y, p.w ?? 58, p.h ?? 42);
+        break;
+      case 'forklift':
+        this.drawForkliftProp(g, p.x, p.y, p.w ?? 72, p.h ?? 46);
+        break;
+      case 'checkpoint':
+        this.drawCheckpointProp(g, p.x, p.y, p.w ?? 78);
+        break;
     }
   }
 
@@ -1088,6 +1190,59 @@ export class ArenaScene extends Phaser.Scene {
     g.lineStyle(1, 0x6ee7ff, 0.42).strokeRoundedRect(x - 22, y - 30, 44, 60, 4);
     g.fillStyle(0x6ee7ff, 0.38).fillRect(x - 13, y - 18, 26, 5);
     g.fillStyle(0xe8e8ec, 0.28).fillCircle(x, y + 12, 5);
+  }
+
+  private drawRackProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    const left = x - w / 2;
+    const top = y - h / 2;
+    g.fillStyle(0x0b1018, 0.88).fillRoundedRect(left, top, w, h, 3);
+    g.fillStyle(0x182231, 0.92).fillRect(left, top - 9, w, 9);
+    g.fillStyle(0x05070b, 0.48).fillRect(left + 8, top + h, w, 13);
+    g.lineStyle(1, 0x596579, 0.52).strokeRoundedRect(left, top - 9, w, h + 9, 3);
+    g.lineStyle(1, 0xf59e0b, 0.32);
+    for (let i = 0; i < Math.max(2, Math.floor(w / 52)); i++) {
+      const xx = left + 22 + i * 52;
+      g.lineBetween(xx, top - 8, xx + 18, top);
+      g.lineBetween(xx + 18, top - 8, xx, top);
+    }
+    g.lineStyle(1, 0x6ee7ff, 0.12).lineBetween(left + 8, top + 5, left + w - 8, top + 5);
+  }
+
+  private drawCrateProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    const left = x - w / 2;
+    const top = y - h / 2;
+    g.fillStyle(0x151d2a, 0.94).fillRoundedRect(left, top, w, h, 3);
+    g.fillStyle(0x0a0f16, 0.5).fillRect(left + 7, top + h, w, 9);
+    g.lineStyle(1, 0x6f7a8e, 0.46).strokeRoundedRect(left, top, w, h, 3);
+    g.lineStyle(1, 0xf59e0b, 0.32)
+      .lineBetween(left + 8, top + 8, left + w - 8, top + h - 8)
+      .lineBetween(left + w - 8, top + 8, left + 8, top + h - 8);
+    g.fillStyle(0xe8e8ec, 0.18).fillRect(left + 9, top + 9, Math.min(24, w - 18), 4);
+  }
+
+  private drawForkliftProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    const left = x - w / 2;
+    const top = y - h / 2;
+    g.fillStyle(0xf59e0b, 0.62).fillRoundedRect(left + 12, top + 10, w * 0.46, h * 0.5, 3);
+    g.fillStyle(0x111722, 0.9).fillRect(left + w * 0.5, top + 5, 8, h - 4);
+    g.lineStyle(2, 0x8a93a3, 0.72)
+      .lineBetween(left + w * 0.64, top + 5, left + w * 0.64, top + h + 8)
+      .lineBetween(left + w * 0.74, top + h + 6, left + w + 10, top + h + 6)
+      .lineBetween(left + w * 0.74, top + h - 2, left + w + 8, top + h - 2);
+    g.fillStyle(0x05070b, 0.9).fillCircle(left + 18, top + h - 2, 6).fillCircle(left + w * 0.55, top + h - 2, 6);
+    g.fillStyle(0x6ee7ff, 0.34).fillRect(left + 20, top + 14, 12, 8);
+  }
+
+  private drawCheckpointProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number) {
+    g.lineStyle(2, 0xff2d2d, 0.45).lineBetween(x - w / 2, y, x + w / 2, y);
+    g.lineStyle(1, 0xf59e0b, 0.55);
+    for (let i = 0; i < 6; i++) {
+      const xx = x - w / 2 + i * (w / 5);
+      g.lineBetween(xx - 7, y + 8, xx + 7, y - 8);
+    }
+    g.fillStyle(0x0b1018, 0.94).fillRoundedRect(x - 20, y - 18, 40, 36, 3);
+    g.lineStyle(1, 0x6ee7ff, 0.35).strokeRoundedRect(x - 20, y - 18, 40, 36, 3);
+    g.fillStyle(0x6ee7ff, 0.45).fillRect(x - 11, y - 8, 22, 4);
   }
 
   private drawStartPad(x: number, y: number) {
@@ -1761,6 +1916,23 @@ export class ArenaScene extends Phaser.Scene {
     for (let x = -h; x < w; x += 120) g.lineBetween(x, h, x + h, 0);
     g.lineStyle(1, 0x0f2631, 0.28);
     for (let x = 0; x < w + h; x += 180) g.lineBetween(x, 0, x - h, h);
+
+    // 창고형 교도소 바닥: 지게차 동선, 적재 구획, 출입 제한선이 시설 목적을 먼저 읽히게 한다.
+    g.lineStyle(2, 0xf59e0b, 0.16);
+    for (let y = 128; y < h - 80; y += 160) {
+      g.lineBetween(64, y, w - 64, y);
+      for (let x = 84; x < w - 64; x += 56) g.lineBetween(x, y - 7, x + 18, y + 7);
+    }
+    g.lineStyle(1, 0x6ee7ff, 0.11);
+    for (let x = 96; x < w - 80; x += 192) {
+      g.strokeRect(x, 92, 112, 72);
+      g.strokeRect(x + 44, h - 174, 112, 72);
+    }
+    g.fillStyle(0xe8e8ec, 0.055);
+    for (let x = 120; x < w - 80; x += 240) {
+      g.fillRect(x, 42, 70, 4);
+      g.fillRect(x + 28, h - 46, 70, 4);
+    }
 
     // 경계선
     g.lineStyle(2, 0x23232e, 1).strokeRect(1, 1, w - 2, h - 2);
