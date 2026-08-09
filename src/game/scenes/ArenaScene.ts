@@ -368,6 +368,7 @@ export class ArenaScene extends Phaser.Scene {
   private waveClearedEmitted = false;
   private enemiesSpawned = false;
   private runEnded = false;
+  private intermissionPaused = false;
 
   /** 현재 진행 중인 웨이브의 mutation — 웨이브 종료 시 prevMutation/mutationHistory로 이관 */
   private activeMutation: Mutation = 'NONE';
@@ -527,6 +528,10 @@ export class ArenaScene extends Phaser.Scene {
 
   update(time: number, delta: number) {
     if (this.playerDead) return;
+    if (this.intermissionPaused) {
+      this.updateHud();
+      return;
+    }
 
     const dt = delta / 1000;
     this.telemetry.tick(
@@ -572,6 +577,7 @@ export class ArenaScene extends Phaser.Scene {
 
   /** 피격 적용 — window.__god=true면 무시(검증용 치트, 브리프 Step 4). 성공하면 true. */
   applyDamageToPlayer(): boolean {
+    if (this.intermissionPaused) return false;
     if (isGodMode()) return false;
     const applied = this.player.takeHit(this.time.now);
     if (applied) {
@@ -580,6 +586,18 @@ export class ArenaScene extends Phaser.Scene {
       playHit();
     }
     return applied;
+  }
+
+  enterIntermissionPause(): void {
+    if (this.intermissionPaused) return;
+    this.intermissionPaused = true;
+    this.physics.pause();
+  }
+
+  exitIntermissionPause(): void {
+    if (!this.intermissionPaused) return;
+    this.intermissionPaused = false;
+    if (!this.playerDead && !this.runEnded) this.physics.resume();
   }
 
   /** Task 6·8이 소비하는 공개 스폰 API — 시그니처 고정 */
@@ -1759,6 +1777,7 @@ export class ArenaScene extends Phaser.Scene {
     clearMutation(this);
     waveClearSlowmo(this);
     playWaveClear();
+    this.enterIntermissionPause();
 
     // 웨이브 종료 "즉시" 텔레메트리를 교체한다(다음 beginWave까지 기다리지 않음) — 인터벌 중(잔여 적탄 등)
     // 발생하는 피해·킬·이동은 방금 push한(이미 스냅샷 분리된) 로그를 건드리지 않고 다음 웨이브 로그로 쌓인다.
@@ -1797,7 +1816,8 @@ export class ArenaScene extends Phaser.Scene {
       // deny도 동일 패턴 — 다음 인터벌의 pick3()가 참조할 "직전 봉인"을 여기서 미리 갱신해둔다.
       this.prevDeny = directive.deny;
       runInterval(this, directive, (picked) => {
-        if (this.playerDead) return; // 대사·카드 선택 중에도 잔여 피해로 사망할 수 있어 onDone에도 동일 가드
+        this.exitIntermissionPause();
+        if (this.playerDead) return; // 방어적 가드: 인터벌 종료 직전 씬 상태가 바뀌면 다음 웨이브를 시작하지 않는다
         this.chosenUpgrades.push(picked);
         this.currentWave = nextWave;
         this.beginWave(directive);
