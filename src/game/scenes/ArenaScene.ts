@@ -667,7 +667,7 @@ export class ArenaScene extends Phaser.Scene {
     const route = layout.patrols[(this.patrolAssignSeq + preferred) % layout.patrols.length];
     this.patrolAssignSeq++;
     const start = this.nearestPassablePoint(x, y, route[0] ?? layout.start);
-    return [start, ...route];
+    return this.adaptPatrolRouteToLastRun(type, [start, ...route]);
   }
 
   private nearestPassablePoint(x: number, y: number, fallback: { x: number; y: number }): { x: number; y: number } {
@@ -675,7 +675,52 @@ export class ArenaScene extends Phaser.Scene {
       x: Phaser.Math.Clamp(x, 48, this.scale.width - 48),
       y: Phaser.Math.Clamp(y, 48, this.scale.height - 48),
     };
-    return this.pointInsideWall(clamped.x, clamped.y) ? fallback : clamped;
+    return this.pointInsideWall(clamped.x, clamped.y) ? this.passableNear(clamped, fallback) : clamped;
+  }
+
+  private adaptPatrolRouteToLastRun(type: EnemyType, baseRoute: { x: number; y: number }[]): { x: number; y: number }[] {
+    const previous = this.waveLogs[this.waveLogs.length - 1];
+    if (!previous || !this.lastHotspot) return baseRoute;
+
+    const hot = this.passableNear(this.lastHotspot, baseRoute[1] ?? baseRoute[0]);
+    const quadrant = this.dominantQuadrant(previous);
+    const clamp = (p: { x: number; y: number }) => this.nearestPassablePoint(p.x, p.y, hot);
+    const horizontal = quadrant.endsWith('W') ? -1 : 1;
+    const vertical = quadrant.startsWith('N') ? -1 : 1;
+    const flankA = clamp({ x: hot.x + horizontal * 118, y: hot.y });
+    const flankB = clamp({ x: hot.x, y: hot.y + vertical * 92 });
+
+    if (type === 'shooter') {
+      return [baseRoute[0], flankA, hot, flankB];
+    }
+    if (type === 'splitter') {
+      return [baseRoute[0], hot, flankB];
+    }
+    if (previous.movement.wallHugRatio >= 0.42 || previous.movement.hotspotConcentration >= 0.22) {
+      return [baseRoute[0], hot, flankA, ...(baseRoute.slice(1, 3))];
+    }
+    return [baseRoute[0], flankA, ...baseRoute.slice(1)];
+  }
+
+  private dominantQuadrant(log: WaveLog): 'NW' | 'NE' | 'SW' | 'SE' {
+    const entries = Object.entries(log.movement.quadrantTime) as ['NW' | 'NE' | 'SW' | 'SE', number][];
+    return entries.reduce((best, cur) => (cur[1] > best[1] ? cur : best))[0];
+  }
+
+  private passableNear(point: { x: number; y: number }, fallback: { x: number; y: number }): { x: number; y: number } {
+    const offsets = [
+      { x: 0, y: 0 }, { x: 42, y: 0 }, { x: -42, y: 0 }, { x: 0, y: 42 }, { x: 0, y: -42 },
+      { x: 84, y: 0 }, { x: -84, y: 0 }, { x: 0, y: 84 }, { x: 0, y: -84 },
+      { x: 58, y: 58 }, { x: -58, y: 58 }, { x: 58, y: -58 }, { x: -58, y: -58 },
+    ];
+    for (const o of offsets) {
+      const p = {
+        x: Phaser.Math.Clamp(point.x + o.x, 48, this.scale.width - 48),
+        y: Phaser.Math.Clamp(point.y + o.y, 48, this.scale.height - 48),
+      };
+      if (!this.pointInsideWall(p.x, p.y)) return p;
+    }
+    return fallback;
   }
 
   private enemyHasPlayerLineOfSight(enemy: Enemy, range: number, fov: number): boolean {
@@ -718,6 +763,7 @@ export class ArenaScene extends Phaser.Scene {
     this.player.body.setVelocity(0, 0);
     this.drawStartPad(layout.start.x, layout.start.y);
     for (const wall of layout.walls) this.addSectorWall(wall);
+    this.drawAdaptiveRouteMemory();
   }
 
   private drawStartPad(x: number, y: number) {
@@ -753,6 +799,18 @@ export class ArenaScene extends Phaser.Scene {
   private trackStageObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
     this.stageObjects.push(obj);
     return obj;
+  }
+
+  private drawAdaptiveRouteMemory() {
+    if (!this.lastHotspot || this.waveLogs.length === 0) return;
+    const p = this.passableNear(this.lastHotspot, this.sectorLayout().exit);
+    const g = this.trackWallObject(this.add.graphics().setDepth(-37));
+    const pulse = 0.18 + Math.sin(this.time.now / 220) * 0.05;
+    g.lineStyle(1, 0xff2d2d, 0.24).strokeCircle(p.x, p.y, 52);
+    g.fillStyle(0xff2d2d, pulse).fillCircle(p.x, p.y, 34);
+    g.lineStyle(1, 0xe8e8ec, 0.18)
+      .lineBetween(p.x - 22, p.y, p.x + 22, p.y)
+      .lineBetween(p.x, p.y - 22, p.x, p.y + 22);
   }
 
   private setupExitZone() {
