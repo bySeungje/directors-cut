@@ -43,6 +43,9 @@ const SPOTLIGHT_HOLD_SEC = 8;
 const STAGE_DAMAGE_DPS = 0.85;
 const DETECTION_BUILD_PER_SEC = 0.56;
 const DETECTION_DECAY_PER_SEC = 0.38;
+const SENSOR_DETECTION_BUILD_PER_SEC = 0.42;
+const NETWORK_ALERT_MS = 1650;
+const NOISE_ALERT_MS = 1150;
 const CAMERA_FRAME_MARGIN_X = 120;
 const CAMERA_FRAME_MARGIN_Y = 82;
 const PRIORITY_TARGET_COUNT = 3;
@@ -68,6 +71,17 @@ interface SectorLayout {
 
 type PropKind = 'cell' | 'searchlight' | 'camera' | 'relay' | 'scorch' | 'compressor' | 'server' | 'vent' | 'pipe' | 'doorPanel';
 interface PropSpec { kind: PropKind; x: number; y: number; w?: number; h?: number; r?: number }
+interface SecuritySensor {
+  type: 'cctv' | 'relay';
+  x: number;
+  y: number;
+  angle: number;
+  range: number;
+  fov: number;
+  sweep: number;
+  speed: number;
+  color: number;
+}
 
 const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
   1: {
@@ -348,6 +362,7 @@ export class ArenaScene extends Phaser.Scene {
   private spotlight!: Phaser.GameObjects.Graphics;
   private spotlightCenter = new Phaser.Math.Vector2();
   private cameraFrame: Phaser.Geom.Rectangle | null = null;
+  private securitySensors: SecuritySensor[] = [];
   private priorityTargets = new Set<Enemy>();
   private priorityRings!: Phaser.GameObjects.Graphics;
   private visionGraphics!: Phaser.GameObjects.Graphics;
@@ -429,6 +444,7 @@ export class ArenaScene extends Phaser.Scene {
     this.exitZone = null;
     this.exitReached = false;
     this.cameraFrame = null;
+    this.securitySensors = [];
     this.priorityTargets.clear();
 
     this.createHud();
@@ -470,6 +486,7 @@ export class ArenaScene extends Phaser.Scene {
       playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
       this.telemetry.recordManualAttack();
       this.detectionLevel = Math.min(1.15, this.detectionLevel + 0.18);
+      this.raiseSecurityNetwork(NOISE_ALERT_MS);
       this.flashStageNote('NOISE SIGNATURE LOGGED', '#f59e0b');
     }
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
@@ -693,6 +710,7 @@ export class ArenaScene extends Phaser.Scene {
     this.clearSectorMap();
     this.priorityTargets.clear();
     this.cameraFrame = null;
+    this.securitySensors = [];
     this.stageRule = 'NONE';
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
@@ -823,7 +841,42 @@ export class ArenaScene extends Phaser.Scene {
     const props = SECTOR_PROPS[this.currentWave] ?? [];
     if (props.length === 0) return;
     const g = this.trackWallObject(this.add.graphics().setDepth(-44));
-    for (const p of props) this.drawSectorProp(g, p);
+    for (const p of props) {
+      this.drawSectorProp(g, p);
+      this.registerSecuritySensorsForProp(p);
+    }
+  }
+
+  private registerSecuritySensorsForProp(p: PropSpec) {
+    if (p.kind === 'camera') {
+      this.securitySensors.push({
+        type: 'cctv',
+        x: p.x,
+        y: p.y,
+        angle: p.r ?? 0,
+        range: 235,
+        fov: Phaser.Math.DegToRad(58),
+        sweep: Phaser.Math.DegToRad(32),
+        speed: 0.00135,
+        color: 0x6ee7ff,
+      });
+      return;
+    }
+    if (p.kind === 'relay') {
+      for (let i = 0; i < 4; i++) {
+        this.securitySensors.push({
+          type: 'relay',
+          x: p.x,
+          y: p.y,
+          angle: i * Math.PI / 2,
+          range: 155,
+          fov: Phaser.Math.DegToRad(40),
+          sweep: Phaser.Math.DegToRad(14),
+          speed: 0.001,
+          color: 0xff2d2d,
+        });
+      }
+    }
   }
 
   private drawSectorProp(g: Phaser.GameObjects.Graphics, p: PropSpec) {
@@ -1122,18 +1175,28 @@ export class ArenaScene extends Phaser.Scene {
     const seenBy = this.drawVisionCones();
     if (seenBy) {
       this.telemetry.recordVisionExposure(dt);
-      this.detectionLevel = Math.min(1.35, this.detectionLevel + DETECTION_BUILD_PER_SEC * dt);
+      const buildRate = seenBy === 'sensor' ? SENSOR_DETECTION_BUILD_PER_SEC : DETECTION_BUILD_PER_SEC;
+      this.detectionLevel = Math.min(1.35, this.detectionLevel + buildRate * dt);
+      this.raiseSecurityNetwork(NETWORK_ALERT_MS);
       if (this.detectionLevel >= 1) {
         this.detectionLevel = 0.62;
         const applied = this.applyDamageToPlayer();
-        if (applied) this.telemetry.recordDamage(seenBy.enemyType);
+        if (applied) this.telemetry.recordDamage(seenBy === 'sensor' ? 'shooter' : seenBy.enemyType);
       }
     } else {
       this.detectionLevel = Math.max(0, this.detectionLevel - DETECTION_DECAY_PER_SEC * dt);
     }
   }
 
-  private drawVisionCones(): Enemy | null {
+  private raiseSecurityNetwork(durationMs: number) {
+    const until = this.time.now + durationMs;
+    const enemies = this.enemies.getChildren() as Enemy[];
+    for (const enemy of enemies) {
+      if (enemy.active) enemy.forceAlertUntil(until);
+    }
+  }
+
+  private drawVisionCones(): Enemy | 'sensor' | null {
     this.visionGraphics.clear();
     let spottedBy: Enemy | null = null;
     const enemies = this.enemies.getChildren() as Enemy[];
@@ -1155,7 +1218,43 @@ export class ArenaScene extends Phaser.Scene {
       this.visionGraphics.lineBetween(enemy.x, enemy.y, p1.x, p1.y);
       this.visionGraphics.lineBetween(enemy.x, enemy.y, p2.x, p2.y);
     }
-    return spottedBy;
+    const sensorSpotted = this.drawSecuritySensorCones();
+    return spottedBy ?? (sensorSpotted ? 'sensor' : null);
+  }
+
+  private drawSecuritySensorCones(): boolean {
+    let spotted = false;
+    for (const sensor of this.securitySensors) {
+      const angle = this.sensorAngle(sensor);
+      const seen = this.playerInSensorVision(sensor, angle);
+      spotted = spotted || seen;
+      const color = seen ? 0xff2d2d : sensor.color;
+      const alpha = seen ? 0.2 : sensor.type === 'relay' ? 0.065 : 0.085;
+      const left = angle - sensor.fov / 2;
+      const right = angle + sensor.fov / 2;
+      const p1 = this.rayEndBeforeWall(sensor.x, sensor.y, left, sensor.range);
+      const p2 = this.rayEndBeforeWall(sensor.x, sensor.y, right, sensor.range);
+      this.visionGraphics.fillStyle(color, alpha);
+      this.visionGraphics.fillTriangle(sensor.x, sensor.y, p1.x, p1.y, p2.x, p2.y);
+      this.visionGraphics.lineStyle(1, color, seen ? 0.66 : 0.22);
+      this.visionGraphics.lineBetween(sensor.x, sensor.y, p1.x, p1.y);
+      this.visionGraphics.lineBetween(sensor.x, sensor.y, p2.x, p2.y);
+    }
+    return spotted;
+  }
+
+  private sensorAngle(sensor: SecuritySensor): number {
+    return sensor.angle + Math.sin(this.time.now * sensor.speed + sensor.x * 0.01) * sensor.sweep;
+  }
+
+  private playerInSensorVision(sensor: SecuritySensor, angle: number): boolean {
+    const dx = this.player.x - sensor.x;
+    const dy = this.player.y - sensor.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > sensor.range) return false;
+    const target = Math.atan2(dy, dx);
+    if (Math.abs(Phaser.Math.Angle.Wrap(target - angle)) > sensor.fov / 2) return false;
+    return !this.segmentHitsWall(sensor.x, sensor.y, this.player.x, this.player.y);
   }
 
   private visionSpec(type: EnemyType): { range: number; fov: number; color: number; alpha: number } {

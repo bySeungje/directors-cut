@@ -449,6 +449,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       : this.slotAngle;
   }
 
+  forceAlertUntil(time: number) {
+    this.alertUntil = Math.max(this.alertUntil, time);
+  }
+
   /** @returns 이 데미지로 사망하면 true */
   takeDamage(dmg: number): boolean {
     this.hp -= dmg;
