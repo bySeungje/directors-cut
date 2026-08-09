@@ -2,8 +2,8 @@ import { Directive, Mutation, WaveLog } from '../contracts/directive';
 import { fillToBudgetFloor } from './validator';
 
 export const OPENING_WAVE: Directive = {
-  // 맵 기반 전환 후 첫 구역은 물량보다 순찰 리듬을 읽게 한다.
-  composition: [{ type: 'chaser', count: 7, spawn: 'RING', elite: false }],
+  // 맵 기반 전환 후 첫 구역은 시작 감방을 즉시 비추지 않고, 바깥 복도에서 들어오는 순찰 리듬을 읽게 한다.
+  composition: [{ type: 'chaser', count: 8, spawn: 'E', elite: false }],
   mutation: 'NONE',
   buff: 'NONE',
   deny: 'NONE',

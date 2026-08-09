@@ -46,6 +46,7 @@ const DETECTION_DECAY_PER_SEC = 0.38;
 const SENSOR_DETECTION_BUILD_PER_SEC = 0.42;
 const NETWORK_ALERT_MS = 1650;
 const NOISE_ALERT_MS = 1150;
+const WAVE_ENTRY_GRACE_MS = 1400;
 const SUSPICION_DECAY_PER_SEC = 0.32;
 const SUSPICION_SEARCH_THRESHOLD = 0.34;
 const SUSPICION_ALERT_THRESHOLD = 0.86;
@@ -100,9 +101,9 @@ const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
       { x: 720, y: 390, w: 240, h: 28 },
     ],
     patrols: [
-      [{ x: 150, y: 505 }, { x: 380, y: 505 }, { x: 380, y: 350 }],
+      [{ x: 255, y: 505 }, { x: 410, y: 505 }, { x: 410, y: 350 }],
       [{ x: 625, y: 112 }, { x: 835, y: 112 }, { x: 835, y: 325 }],
-      [{ x: 130, y: 145 }, { x: 445, y: 145 }, { x: 445, y: 310 }],
+      [{ x: 230, y: 145 }, { x: 445, y: 145 }, { x: 445, y: 310 }],
     ],
   },
   2: {
@@ -296,6 +297,13 @@ const SECTOR_PROPS: Record<number, PropSpec[]> = {
   ],
 };
 
+const SEARCHLIGHT_ROUTE_WAVE_2 = [
+  { x: 170, y: 126 },
+  { x: 380, y: 126 },
+  { x: 582, y: 332 },
+  { x: 780, y: 486 },
+];
+
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
 function isGodMode(): boolean {
   return import.meta.env.DEV && (window as unknown as { __god?: boolean }).__god === true;
@@ -368,6 +376,7 @@ export class ArenaScene extends Phaser.Scene {
   private spotlightHoldSec = 0;
   private spotlight!: Phaser.GameObjects.Graphics;
   private spotlightCenter = new Phaser.Math.Vector2();
+  private waveEntryGraceUntil = 0;
   private cameraFrame: Phaser.Geom.Rectangle | null = null;
   private securitySensors: SecuritySensor[] = [];
   private priorityTargets = new Set<Enemy>();
@@ -455,6 +464,7 @@ export class ArenaScene extends Phaser.Scene {
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
     this.detectionLevel = 0;
+    this.waveEntryGraceUntil = 0;
     this.suspicionLevel = 0;
     this.securityMood = 'clear';
     this.lastKnownPlayer = null;
@@ -723,6 +733,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemiesSpawned = false;
     this.activeMutation = d.mutation;
     this.waveStartAt = this.time.now;
+    this.waveEntryGraceUntil = this.time.now + WAVE_ENTRY_GRACE_MS;
     runDirective(this, d);
     this.setupStageRule();
     this.showRuleBanner(d);
@@ -862,6 +873,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private enemyHasPlayerLineOfSight(enemy: Enemy, range: number, fov: number): boolean {
+    if (this.time.now < this.waveEntryGraceUntil) return false;
     const dx = this.player.x - enemy.x;
     const dy = this.player.y - enemy.y;
     const dist = Math.hypot(dx, dy);
@@ -1176,7 +1188,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private setupSpotlight() {
-    this.spotlightCenter.set(this.scale.width / 2, this.scale.height / 2);
+    const initial = this.currentWave === 2 ? SEARCHLIGHT_ROUTE_WAVE_2[0] : { x: this.scale.width / 2, y: this.scale.height / 2 };
+    this.spotlightCenter.set(initial.x, initial.y);
     this.spotlight = this.trackStageObject(this.add.graphics().setDepth(-20));
   }
 
@@ -1386,6 +1399,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private playerInSensorVision(sensor: SecuritySensor, angle: number): boolean {
+    if (this.time.now < this.waveEntryGraceUntil) return false;
     const dx = this.player.x - sensor.x;
     const dy = this.player.y - sensor.y;
     const dist = Math.hypot(dx, dy);
@@ -1408,6 +1422,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private playerInVision(enemy: Enemy, range: number, fov: number): boolean {
+    if (this.time.now < this.waveEntryGraceUntil) return false;
     const dx = this.player.x - enemy.x;
     const dy = this.player.y - enemy.y;
     const dist = Math.hypot(dx, dy);
@@ -1418,11 +1433,9 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateSpotlight(dt: number) {
-    const t = this.time.now / 1000;
-    const radius = 142;
-    const tx = this.scale.width / 2 + Math.cos(t * 0.58) * 190;
-    const ty = this.scale.height / 2 + Math.sin(t * 0.43) * 128;
-    this.spotlightCenter.lerp(new Phaser.Math.Vector2(tx, ty), 0.025);
+    const radius = this.currentWave === 2 ? 156 : 142;
+    const target = this.searchlightTarget();
+    this.spotlightCenter.lerp(new Phaser.Math.Vector2(target.x, target.y), this.currentWave === 2 ? 0.018 : 0.025);
 
     const inside = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.spotlightCenter.x, this.spotlightCenter.y) <= radius;
     if (inside) this.spotlightHoldSec = Math.min(SPOTLIGHT_HOLD_SEC, this.spotlightHoldSec + dt);
@@ -1436,6 +1449,27 @@ export class ArenaScene extends Phaser.Scene {
     this.spotlight.lineStyle(1, 0xe8e8ec, 0.25)
       .lineBetween(this.spotlightCenter.x - 18, this.spotlightCenter.y, this.spotlightCenter.x + 18, this.spotlightCenter.y)
       .lineBetween(this.spotlightCenter.x, this.spotlightCenter.y - 18, this.spotlightCenter.x, this.spotlightCenter.y + 18);
+  }
+
+  private searchlightTarget(): { x: number; y: number } {
+    const t = (this.time.now - this.waveStartAt) / 1000;
+    if (this.currentWave !== 2) {
+      const globalT = this.time.now / 1000;
+      return {
+        x: this.scale.width / 2 + Math.cos(globalT * 0.58) * 190,
+        y: this.scale.height / 2 + Math.sin(globalT * 0.43) * 128,
+      };
+    }
+
+    const route = SEARCHLIGHT_ROUTE_WAVE_2;
+    const segment = Math.floor(t * 0.42) % route.length;
+    const next = (segment + 1) % route.length;
+    const local = (t * 0.42) % 1;
+    const eased = (1 - Math.cos(local * Math.PI)) / 2;
+    return {
+      x: Phaser.Math.Linear(route[segment].x, route[next].x, eased),
+      y: Phaser.Math.Linear(route[segment].y, route[next].y, eased),
+    };
   }
 
   private tickCameraFrame(dt: number) {
