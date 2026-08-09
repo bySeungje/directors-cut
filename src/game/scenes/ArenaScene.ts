@@ -66,6 +66,9 @@ interface SectorLayout {
   patrols: { x: number; y: number }[][];
 }
 
+type PropKind = 'cell' | 'searchlight' | 'camera' | 'relay' | 'scorch' | 'compressor' | 'server' | 'vent' | 'pipe' | 'doorPanel';
+interface PropSpec { kind: PropKind; x: number; y: number; w?: number; h?: number; r?: number }
+
 const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
   1: {
     start: { x: 92, y: 548 },
@@ -221,6 +224,55 @@ const SECTOR_STORIES: Record<number, SectorStory> = {
     directorLine: '최종 봉쇄다. 네 탈출 기록은 여기서 끝난다.',
     rule: 'FINAL_CORE',
   },
+};
+
+const SECTOR_PROPS: Record<number, PropSpec[]> = {
+  1: [
+    { kind: 'cell', x: 128, y: 144 }, { kind: 'cell', x: 128, y: 228 },
+    { kind: 'vent', x: 412, y: 500, w: 78, h: 18 },
+    { kind: 'pipe', x: 650, y: 118, w: 170 },
+    { kind: 'doorPanel', x: 828, y: 126 },
+  ],
+  2: [
+    { kind: 'searchlight', x: 480, y: 320, r: 118 },
+    { kind: 'pipe', x: 236, y: 548, w: 190 },
+    { kind: 'camera', x: 706, y: 116, r: Math.PI / 2 },
+    { kind: 'vent', x: 824, y: 486, w: 62, h: 18 },
+  ],
+  3: [
+    { kind: 'camera', x: 322, y: 218, r: 0.35 },
+    { kind: 'camera', x: 780, y: 384, r: -2.4 },
+    { kind: 'doorPanel', x: 842, y: 508 },
+    { kind: 'pipe', x: 120, y: 116, w: 160 },
+    { kind: 'vent', x: 518, y: 516, w: 88, h: 18 },
+  ],
+  4: [
+    { kind: 'relay', x: 222, y: 332 }, { kind: 'relay', x: 738, y: 332 },
+    { kind: 'relay', x: 480, y: 112 },
+    { kind: 'camera', x: 480, y: 424, r: -Math.PI / 2 },
+    { kind: 'pipe', x: 360, y: 560, w: 240 },
+  ],
+  5: [
+    { kind: 'scorch', x: 200, y: 320, w: 150, h: 50 },
+    { kind: 'scorch', x: 790, y: 320, w: 130, h: 48 },
+    { kind: 'doorPanel', x: 846, y: 296 },
+    { kind: 'vent', x: 510, y: 454, w: 112, h: 18 },
+    { kind: 'camera', x: 514, y: 190, r: Math.PI / 2 },
+  ],
+  6: [
+    { kind: 'compressor', x: 306, y: 318, w: 78, h: 74 },
+    { kind: 'compressor', x: 684, y: 318, w: 78, h: 74 },
+    { kind: 'camera', x: 838, y: 118, r: Math.PI },
+    { kind: 'pipe', x: 470, y: 584, w: 280 },
+    { kind: 'vent', x: 118, y: 118, w: 84, h: 18 },
+  ],
+  7: [
+    { kind: 'server', x: 306, y: 326, w: 72, h: 96 },
+    { kind: 'server', x: 654, y: 326, w: 72, h: 96 },
+    { kind: 'relay', x: 480, y: 138 },
+    { kind: 'camera', x: 480, y: 488, r: -Math.PI / 2 },
+    { kind: 'doorPanel', x: 480, y: 104 },
+  ],
 };
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
@@ -761,9 +813,145 @@ export class ArenaScene extends Phaser.Scene {
     const layout = this.sectorLayout();
     this.player.setPosition(layout.start.x, layout.start.y);
     this.player.body.setVelocity(0, 0);
+    this.drawSectorAtmosphere();
     this.drawStartPad(layout.start.x, layout.start.y);
     for (const wall of layout.walls) this.addSectorWall(wall);
     this.drawAdaptiveRouteMemory();
+  }
+
+  private drawSectorAtmosphere() {
+    const props = SECTOR_PROPS[this.currentWave] ?? [];
+    if (props.length === 0) return;
+    const g = this.trackWallObject(this.add.graphics().setDepth(-44));
+    for (const p of props) this.drawSectorProp(g, p);
+  }
+
+  private drawSectorProp(g: Phaser.GameObjects.Graphics, p: PropSpec) {
+    switch (p.kind) {
+      case 'cell':
+        this.drawCellProp(g, p.x, p.y);
+        break;
+      case 'searchlight':
+        this.drawSearchlightProp(g, p.x, p.y, p.r ?? 110);
+        break;
+      case 'camera':
+        this.drawCameraProp(g, p.x, p.y, p.r ?? 0);
+        break;
+      case 'relay':
+        this.drawRelayProp(g, p.x, p.y);
+        break;
+      case 'scorch':
+        this.drawScorchProp(g, p.x, p.y, p.w ?? 140, p.h ?? 48);
+        break;
+      case 'compressor':
+        this.drawCompressorProp(g, p.x, p.y, p.w ?? 80, p.h ?? 70);
+        break;
+      case 'server':
+        this.drawServerProp(g, p.x, p.y, p.w ?? 72, p.h ?? 96);
+        break;
+      case 'vent':
+        this.drawVentProp(g, p.x, p.y, p.w ?? 80, p.h ?? 18);
+        break;
+      case 'pipe':
+        this.drawPipeProp(g, p.x, p.y, p.w ?? 160);
+        break;
+      case 'doorPanel':
+        this.drawDoorPanelProp(g, p.x, p.y);
+        break;
+    }
+  }
+
+  private drawCellProp(g: Phaser.GameObjects.Graphics, x: number, y: number) {
+    g.fillStyle(0x0a0f16, 0.78).fillRoundedRect(x - 42, y - 28, 84, 56, 3);
+    g.lineStyle(1, 0x344155, 0.58).strokeRoundedRect(x - 42, y - 28, 84, 56, 3);
+    g.fillStyle(0x161c27, 0.9).fillRect(x - 34, y + 8, 52, 10);
+    g.lineStyle(1, 0x6ee7ff, 0.16);
+    for (let i = 0; i < 5; i++) g.lineBetween(x - 28 + i * 12, y - 22, x - 28 + i * 12, y + 20);
+  }
+
+  private drawSearchlightProp(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number) {
+    g.fillStyle(0xe8e8ec, 0.035).fillCircle(x, y, r);
+    g.lineStyle(1, 0xe8e8ec, 0.18).strokeCircle(x, y, r);
+    g.fillStyle(0x111722, 0.92).fillCircle(x, y, 20);
+    g.lineStyle(2, 0x6ee7ff, 0.34).strokeCircle(x, y, 24);
+    g.lineStyle(1, 0xe8e8ec, 0.22).lineBetween(x - 34, y, x + 34, y).lineBetween(x, y - 34, x, y + 34);
+  }
+
+  private drawCameraProp(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number) {
+    const dx = Math.cos(r), dy = Math.sin(r);
+    const px = -dy, py = dx;
+    g.lineStyle(2, 0x344155, 0.78).lineBetween(x - dx * 22, y - dy * 22, x, y);
+    g.fillStyle(0x141b26, 0.96).fillTriangle(
+      x + dx * 22, y + dy * 22,
+      x - dx * 10 + px * 12, y - dy * 10 + py * 12,
+      x - dx * 10 - px * 12, y - dy * 10 - py * 12,
+    );
+    g.fillStyle(0x6ee7ff, 0.72).fillCircle(x + dx * 18, y + dy * 18, 4);
+    g.lineStyle(1, 0x6ee7ff, 0.12)
+      .lineBetween(x + dx * 24, y + dy * 24, x + dx * 74 + px * 24, y + dy * 74 + py * 24)
+      .lineBetween(x + dx * 24, y + dy * 24, x + dx * 74 - px * 24, y + dy * 74 - py * 24);
+  }
+
+  private drawRelayProp(g: Phaser.GameObjects.Graphics, x: number, y: number) {
+    g.fillStyle(0x0b0f18, 0.92).fillCircle(x, y, 22);
+    g.lineStyle(2, 0xff2d2d, 0.45).strokeCircle(x, y, 26);
+    g.fillStyle(0xff2d2d, 0.35).fillCircle(x, y, 7);
+    g.lineStyle(1, 0xe8e8ec, 0.18)
+      .lineBetween(x - 32, y, x - 10, y)
+      .lineBetween(x + 10, y, x + 32, y)
+      .lineBetween(x, y - 32, x, y - 10)
+      .lineBetween(x, y + 10, x, y + 32);
+  }
+
+  private drawScorchProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    g.fillStyle(0xff2d2d, 0.08).fillEllipse(x, y, w, h);
+    g.lineStyle(1, 0xff2d2d, 0.28);
+    for (let i = -2; i <= 2; i++) g.lineBetween(x - w * 0.34, y + i * 8, x + w * 0.34, y + i * 8 - 18);
+    g.fillStyle(0x05070b, 0.38).fillEllipse(x + 12, y + 6, w * 0.45, h * 0.48);
+  }
+
+  private drawCompressorProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    g.fillStyle(0x101722, 0.95).fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+    g.lineStyle(1, 0x344155, 0.7).strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+    g.fillStyle(0x6ee7ff, 0.16).fillTriangle(x - 18, y, x - 2, y - 12, x - 2, y + 12);
+    g.fillTriangle(x + 18, y, x + 2, y - 12, x + 2, y + 12);
+    g.lineStyle(2, 0xe8e8ec, 0.16).lineBetween(x - w / 2 + 8, y, x + w / 2 - 8, y);
+  }
+
+  private drawServerProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    g.fillStyle(0x0b1018, 0.96).fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+    g.lineStyle(1, 0x344155, 0.72).strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+    for (let i = 0; i < 5; i++) {
+      const yy = y - h / 2 + 12 + i * 16;
+      g.lineStyle(1, 0x6ee7ff, 0.18).lineBetween(x - w / 2 + 8, yy, x + w / 2 - 8, yy);
+      g.fillStyle(i % 2 === 0 ? 0x6ee7ff : 0xff2d2d, 0.42).fillCircle(x + w / 2 - 14, yy + 5, 2);
+    }
+  }
+
+  private drawVentProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+    g.fillStyle(0x0a0f16, 0.9).fillRoundedRect(x - w / 2, y - h / 2, w, h, 3);
+    g.lineStyle(1, 0x344155, 0.7).strokeRoundedRect(x - w / 2, y - h / 2, w, h, 3);
+    g.lineStyle(1, 0xe8e8ec, 0.18);
+    for (let i = 0; i < 6; i++) {
+      const xx = x - w / 2 + 10 + i * ((w - 20) / 5);
+      g.lineBetween(xx, y - h / 2 + 4, xx, y + h / 2 - 4);
+    }
+  }
+
+  private drawPipeProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number) {
+    g.lineStyle(5, 0x202938, 0.7).lineBetween(x - w / 2, y, x + w / 2, y);
+    g.lineStyle(1, 0x6ee7ff, 0.13).lineBetween(x - w / 2, y - 4, x + w / 2, y - 4);
+    for (let i = 0; i < 4; i++) {
+      const xx = x - w / 2 + 24 + i * ((w - 48) / 3);
+      g.fillStyle(0x111722, 0.95).fillRect(xx - 4, y - 9, 8, 18);
+    }
+  }
+
+  private drawDoorPanelProp(g: Phaser.GameObjects.Graphics, x: number, y: number) {
+    g.fillStyle(0x0b1018, 0.94).fillRoundedRect(x - 22, y - 30, 44, 60, 4);
+    g.lineStyle(1, 0x6ee7ff, 0.42).strokeRoundedRect(x - 22, y - 30, 44, 60, 4);
+    g.fillStyle(0x6ee7ff, 0.38).fillRect(x - 13, y - 18, 26, 5);
+    g.fillStyle(0xe8e8ec, 0.28).fillCircle(x, y + 12, 5);
   }
 
   private drawStartPad(x: number, y: number) {
