@@ -46,6 +46,11 @@ const DETECTION_DECAY_PER_SEC = 0.38;
 const SENSOR_DETECTION_BUILD_PER_SEC = 0.42;
 const NETWORK_ALERT_MS = 1650;
 const NOISE_ALERT_MS = 1150;
+const SUSPICION_DECAY_PER_SEC = 0.32;
+const SUSPICION_SEARCH_THRESHOLD = 0.34;
+const SUSPICION_ALERT_THRESHOLD = 0.86;
+const INVESTIGATION_HOLD_MS = 2400;
+const BODY_DISCOVERY_RANGE = 190;
 const CAMERA_FRAME_MARGIN_X = 120;
 const CAMERA_FRAME_MARGIN_Y = 82;
 const PRIORITY_TARGET_COUNT = 3;
@@ -82,6 +87,8 @@ interface SecuritySensor {
   speed: number;
   color: number;
 }
+type SecurityMood = 'clear' | 'suspicious' | 'searching' | 'alert';
+type SecuritySpotter = Enemy | SecuritySensor;
 
 const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
   1: {
@@ -367,6 +374,13 @@ export class ArenaScene extends Phaser.Scene {
   private priorityRings!: Phaser.GameObjects.Graphics;
   private visionGraphics!: Phaser.GameObjects.Graphics;
   private detectionLevel = 0;
+  private suspicionLevel = 0;
+  private securityMood: SecurityMood = 'clear';
+  private lastKnownPlayer: Phaser.Math.Vector2 | null = null;
+  private investigationUntil = 0;
+  private disabledBodies: { x: number; y: number; type: EnemyType; discovered: boolean; marker: Phaser.GameObjects.Graphics }[] = [];
+  private securityLogText!: Phaser.GameObjects.Text;
+  private securityLogUntil = 0;
   private exitZone: Phaser.Geom.Circle | null = null;
   private exitReached = false;
   private exitGraphics!: Phaser.GameObjects.Graphics;
@@ -441,6 +455,13 @@ export class ArenaScene extends Phaser.Scene {
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
     this.detectionLevel = 0;
+    this.suspicionLevel = 0;
+    this.securityMood = 'clear';
+    this.lastKnownPlayer = null;
+    this.investigationUntil = 0;
+    for (const body of this.disabledBodies) body.marker.destroy();
+    this.disabledBodies = [];
+    this.securityLogUntil = 0;
     this.exitZone = null;
     this.exitReached = false;
     this.cameraFrame = null;
@@ -485,15 +506,14 @@ export class ArenaScene extends Phaser.Scene {
     if (fireAngles.length > 0) {
       playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
       this.telemetry.recordManualAttack();
-      this.detectionLevel = Math.min(1.15, this.detectionLevel + 0.18);
-      this.raiseSecurityNetwork(NOISE_ALERT_MS);
-      this.flashStageNote('NOISE SIGNATURE LOGGED', '#f59e0b');
+      this.raiseNoiseInvestigation({ x: this.player.x, y: this.player.y });
     }
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     const enemyList = this.enemies.getChildren() as Enemy[];
     const behaviorContext: EnemyBehaviorContext = {
       canSeePlayer: (enemy, range, fov) => this.enemyHasPlayerLineOfSight(enemy, range, fov),
+      investigationPoint: this.investigationPoint(),
     };
     for (const enemy of enemyList) {
       if (!enemy.active) continue;
@@ -620,6 +640,7 @@ export class ArenaScene extends Phaser.Scene {
     enemy.body.enable = false;
     enemy.body.setVelocity(0, 0);
     killBurst(this, x, y, color);
+    this.leaveDisabledBody(x, y, enemy.enemyType, color);
 
     if (wasSplit) {
       // 분열 위치: 임의 축 위 균등 분배 오프셋(VOLATILE이면 3기)
@@ -633,6 +654,47 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.checkWaveClear();
+  }
+
+  private leaveDisabledBody(x: number, y: number, type: EnemyType, color: number) {
+    const marker = this.add.graphics().setDepth(-7);
+    marker.fillStyle(color, 0.12).fillCircle(x, y, 15);
+    marker.lineStyle(1, color, 0.38).strokeCircle(x, y, 18);
+    marker.lineStyle(1, 0xe8e8ec, 0.22).lineBetween(x - 11, y - 7, x + 11, y + 7).lineBetween(x - 11, y + 7, x + 11, y - 7);
+    this.disabledBodies.push({ x, y, type, discovered: false, marker });
+  }
+
+  private checkBodyDiscoveries() {
+    for (const body of this.disabledBodies) {
+      if (body.discovered) continue;
+      const foundByEnemy = (this.enemies.getChildren() as Enemy[]).some((enemy) => {
+        if (!enemy.active) return false;
+        const range = body.type === 'shooter' ? BODY_DISCOVERY_RANGE + 40 : BODY_DISCOVERY_RANGE;
+        const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, body.x, body.y);
+        return dist <= range && !this.segmentHitsWall(enemy.x, enemy.y, body.x, body.y);
+      });
+      const foundBySensor = this.securitySensors.some((sensor) => {
+        const angle = this.sensorAngle(sensor);
+        const dx = body.x - sensor.x;
+        const dy = body.y - sensor.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > sensor.range * 0.82) return false;
+        if (Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - angle)) > sensor.fov / 2) return false;
+        return !this.segmentHitsWall(sensor.x, sensor.y, body.x, body.y);
+      });
+      if (foundByEnemy || foundBySensor) {
+        body.discovered = true;
+        body.marker.clear();
+        body.marker.fillStyle(0xff2d2d, 0.16).fillCircle(body.x, body.y, 19);
+        body.marker.lineStyle(2, 0xff2d2d, 0.62).strokeCircle(body.x, body.y, 23);
+        this.suspicionLevel = Math.max(this.suspicionLevel, SUSPICION_ALERT_THRESHOLD);
+        this.setInvestigationPoint({ x: body.x, y: body.y }, INVESTIGATION_HOLD_MS + 900);
+        this.raiseSecurityNetwork(NETWORK_ALERT_MS + 950);
+        this.updateSecurityMood();
+        this.flashStageNote('DISABLED UNIT DISCOVERED', '#ff2d2d');
+        this.setSecurityLog('제압 흔적 발견: 보안망이 잔해 주변을 수색한다', '#ff2d2d');
+      }
+    }
   }
 
   private handlePlayerDeath() {
@@ -711,6 +773,12 @@ export class ArenaScene extends Phaser.Scene {
     this.priorityTargets.clear();
     this.cameraFrame = null;
     this.securitySensors = [];
+    for (const body of this.disabledBodies) body.marker.destroy();
+    this.disabledBodies = [];
+    this.lastKnownPlayer = null;
+    this.investigationUntil = 0;
+    this.suspicionLevel = 0;
+    this.securityMood = 'clear';
     this.stageRule = 'NONE';
     this.stageRuleDamageAcc = 0;
     this.spotlightHoldSec = 0;
@@ -849,30 +917,33 @@ export class ArenaScene extends Phaser.Scene {
 
   private registerSecuritySensorsForProp(p: PropSpec) {
     if (p.kind === 'camera') {
+      const frameBlock = this.currentWave === 3;
+      const core = this.currentWave === 7;
       this.securitySensors.push({
         type: 'cctv',
         x: p.x,
         y: p.y,
         angle: p.r ?? 0,
-        range: 235,
-        fov: Phaser.Math.DegToRad(58),
-        sweep: Phaser.Math.DegToRad(32),
-        speed: 0.00135,
+        range: frameBlock ? 285 : core ? 255 : 235,
+        fov: Phaser.Math.DegToRad(frameBlock ? 46 : 58),
+        sweep: Phaser.Math.DegToRad(frameBlock ? 18 : core ? 24 : 32),
+        speed: frameBlock ? 0.0009 : 0.00135,
         color: 0x6ee7ff,
       });
       return;
     }
     if (p.kind === 'relay') {
+      const lockdown = this.currentWave === 4 || this.currentWave === 7;
       for (let i = 0; i < 4; i++) {
         this.securitySensors.push({
           type: 'relay',
           x: p.x,
           y: p.y,
           angle: i * Math.PI / 2,
-          range: 155,
-          fov: Phaser.Math.DegToRad(40),
-          sweep: Phaser.Math.DegToRad(14),
-          speed: 0.001,
+          range: lockdown ? 185 : 155,
+          fov: Phaser.Math.DegToRad(lockdown ? 46 : 40),
+          sweep: Phaser.Math.DegToRad(lockdown ? 9 : 14),
+          speed: lockdown ? 0.00072 : 0.001,
           color: 0xff2d2d,
         });
       }
@@ -1044,6 +1115,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private drawAdaptiveRouteMemory() {
     if (!this.lastHotspot || this.waveLogs.length === 0) return;
+    const last = this.waveLogs[this.waveLogs.length - 1];
+    const quadrant = last ? this.dominantQuadrant(last) : 'NW';
     const p = this.passableNear(this.lastHotspot, this.sectorLayout().exit);
     const g = this.trackWallObject(this.add.graphics().setDepth(-37));
     const pulse = 0.18 + Math.sin(this.time.now / 220) * 0.05;
@@ -1052,6 +1125,7 @@ export class ArenaScene extends Phaser.Scene {
     g.lineStyle(1, 0xe8e8ec, 0.18)
       .lineBetween(p.x - 22, p.y, p.x + 22, p.y)
       .lineBetween(p.x, p.y - 22, p.x, p.y + 22);
+    this.setSecurityLog(`이전 동선 분석: ${quadrant} 반복 이동 · 순찰 루트 재배치`, '#ff2d2d');
   }
 
   private setupExitZone() {
@@ -1173,19 +1247,13 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     const seenBy = this.drawVisionCones();
-    if (seenBy) {
-      this.telemetry.recordVisionExposure(dt);
-      const buildRate = seenBy === 'sensor' ? SENSOR_DETECTION_BUILD_PER_SEC : DETECTION_BUILD_PER_SEC;
-      this.detectionLevel = Math.min(1.35, this.detectionLevel + buildRate * dt);
-      this.raiseSecurityNetwork(NETWORK_ALERT_MS);
-      if (this.detectionLevel >= 1) {
-        this.detectionLevel = 0.62;
-        const applied = this.applyDamageToPlayer();
-        if (applied) this.telemetry.recordDamage(seenBy === 'sensor' ? 'shooter' : seenBy.enemyType);
-      }
-    } else {
+    if (seenBy) this.processVisionContact(seenBy, dt);
+    else {
       this.detectionLevel = Math.max(0, this.detectionLevel - DETECTION_DECAY_PER_SEC * dt);
+      this.suspicionLevel = Math.max(0, this.suspicionLevel - SUSPICION_DECAY_PER_SEC * dt);
+      this.updateSecurityMood();
     }
+    this.checkBodyDiscoveries();
   }
 
   private raiseSecurityNetwork(durationMs: number) {
@@ -1196,7 +1264,77 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  private drawVisionCones(): Enemy | 'sensor' | null {
+  private investigationPoint(): { x: number; y: number } | null {
+    if (this.lastKnownPlayer && this.time.now < this.investigationUntil) return this.lastKnownPlayer;
+    return null;
+  }
+
+  private setInvestigationPoint(point: { x: number; y: number }, durationMs = INVESTIGATION_HOLD_MS) {
+    const p = this.nearestPassablePoint(point.x, point.y, point);
+    this.lastKnownPlayer = new Phaser.Math.Vector2(p.x, p.y);
+    this.investigationUntil = Math.max(this.investigationUntil, this.time.now + durationMs);
+  }
+
+  private processVisionContact(spotter: SecuritySpotter, dt: number) {
+    this.telemetry.recordVisionExposure(dt);
+    this.setInvestigationPoint({ x: this.player.x, y: this.player.y });
+
+    const isSensor = !(spotter instanceof Enemy);
+    const sensorType = isSensor ? (spotter as SecuritySensor).type : null;
+    const buildRate = isSensor
+      ? (sensorType === 'relay' ? SENSOR_DETECTION_BUILD_PER_SEC * 1.18 : SENSOR_DETECTION_BUILD_PER_SEC)
+      : DETECTION_BUILD_PER_SEC;
+    const suspicionRate = sensorType === 'cctv' ? 0.72 : sensorType === 'relay' ? 0.9 : 0.62;
+    this.suspicionLevel = Math.min(1.2, this.suspicionLevel + suspicionRate * dt);
+
+    if (this.suspicionLevel >= SUSPICION_SEARCH_THRESHOLD) {
+      const duration = this.suspicionLevel >= SUSPICION_ALERT_THRESHOLD ? NETWORK_ALERT_MS : Math.floor(NETWORK_ALERT_MS * 0.7);
+      this.raiseSecurityNetwork(duration);
+    }
+    if (this.suspicionLevel >= SUSPICION_ALERT_THRESHOLD) {
+      this.detectionLevel = Math.min(1.35, this.detectionLevel + buildRate * dt);
+    } else {
+      this.detectionLevel = Math.min(0.74, this.detectionLevel + buildRate * dt * 0.38);
+    }
+
+    this.updateSecurityMood();
+    if (this.detectionLevel >= 1) {
+      this.detectionLevel = 0.62;
+      const applied = this.applyDamageToPlayer();
+      if (applied) this.telemetry.recordDamage(isSensor ? 'shooter' : (spotter as Enemy).enemyType);
+    }
+  }
+
+  private raiseNoiseInvestigation(point: { x: number; y: number }) {
+    this.detectionLevel = Math.min(1.15, this.detectionLevel + 0.12);
+    this.suspicionLevel = Math.min(1.05, this.suspicionLevel + 0.34);
+    this.setInvestigationPoint(point, INVESTIGATION_HOLD_MS + 650);
+    this.raiseSecurityNetwork(NOISE_ALERT_MS);
+    this.updateSecurityMood();
+    this.flashStageNote('NOISE BAIT / DRONES INVESTIGATING', '#f59e0b');
+    this.setSecurityLog('음향 변칙 감지: 드론·경비가 마지막 소음 지점을 확인한다', '#f59e0b');
+  }
+
+  private updateSecurityMood() {
+    const previous = this.securityMood;
+    if (this.detectionLevel >= 0.95 || this.suspicionLevel >= SUSPICION_ALERT_THRESHOLD) this.securityMood = 'alert';
+    else if (this.suspicionLevel >= SUSPICION_SEARCH_THRESHOLD || this.investigationPoint()) this.securityMood = 'searching';
+    else if (this.suspicionLevel > 0.05) this.securityMood = 'suspicious';
+    else this.securityMood = 'clear';
+
+    if (this.securityMood !== previous) {
+      const label = this.securityMood === 'clear' ? 'CLEAR' : this.securityMood === 'suspicious' ? 'SUSPICION' : this.securityMood === 'searching' ? 'SEARCHING LAST CONTACT' : 'LOCKDOWN ALERT';
+      const color = this.securityMood === 'alert' ? '#ff2d2d' : this.securityMood === 'clear' ? '#6ee7ff' : '#f59e0b';
+      this.setSecurityLog(`SECURITY ${label}`, color);
+    }
+  }
+
+  private setSecurityLog(text: string, color = '#f59e0b') {
+    this.securityLogText?.setText(text).setColor(color);
+    this.securityLogUntil = this.time.now + 2600;
+  }
+
+  private drawVisionCones(): SecuritySpotter | null {
     this.visionGraphics.clear();
     let spottedBy: Enemy | null = null;
     const enemies = this.enemies.getChildren() as Enemy[];
@@ -1219,15 +1357,15 @@ export class ArenaScene extends Phaser.Scene {
       this.visionGraphics.lineBetween(enemy.x, enemy.y, p2.x, p2.y);
     }
     const sensorSpotted = this.drawSecuritySensorCones();
-    return spottedBy ?? (sensorSpotted ? 'sensor' : null);
+    return spottedBy ?? sensorSpotted;
   }
 
-  private drawSecuritySensorCones(): boolean {
-    let spotted = false;
+  private drawSecuritySensorCones(): SecuritySensor | null {
+    let spotted: SecuritySensor | null = null;
     for (const sensor of this.securitySensors) {
       const angle = this.sensorAngle(sensor);
       const seen = this.playerInSensorVision(sensor, angle);
-      spotted = spotted || seen;
+      if (seen) spotted = spotted ?? sensor;
       const color = seen ? 0xff2d2d : sensor.color;
       const alpha = seen ? 0.2 : sensor.type === 'relay' ? 0.065 : 0.085;
       const left = angle - sensor.fov / 2;
@@ -1619,6 +1757,9 @@ export class ArenaScene extends Phaser.Scene {
     this.objectiveText = this.add
       .text(16, 156, '', { fontFamily: 'monospace', fontSize: '11px', color: '#7a7a88' })
       .setDepth(HUD_DEPTH);
+    this.securityLogText = this.add
+      .text(16, 174, '', { fontFamily: 'monospace', fontSize: '10px', color: '#f59e0b' })
+      .setDepth(HUD_DEPTH);
 
     this.dashGauge = this.add.graphics().setDepth(HUD_DEPTH);
     this.attackGauge = this.add.graphics().setDepth(HUD_DEPTH);
@@ -1655,6 +1796,7 @@ export class ArenaScene extends Phaser.Scene {
     this.attackGauge.fillStyle(0xf59e0b, 0.92).fillRect(x, y + 10, w * disruptFrac, h);
 
     this.muteText.setText(isMuted() ? '[M] 음소거 중 · [E/J] 교란' : '[M] 소리 켜짐 · [E/J] 교란');
+    if (this.securityLogText && this.time.now > this.securityLogUntil) this.securityLogText.setText('');
     this.updateObjectiveText();
     this.updatePredictionMeter();
   }
@@ -1662,19 +1804,25 @@ export class ArenaScene extends Phaser.Scene {
   private updateObjectiveText() {
     const story = this.sectorStory();
     const exit = this.exitReached ? '출구 확보' : '출구로 이동';
-    const detection = this.detectionLevel > 0.02 ? ` · 발각 ${(this.detectionLevel * 100).toFixed(0)}%` : '';
+    const status = this.securityMood === 'clear'
+      ? ''
+      : this.securityMood === 'suspicious'
+        ? ` · 의심 ${(this.suspicionLevel * 100).toFixed(0)}%`
+        : this.securityMood === 'searching'
+          ? ' · 마지막 위치 수색'
+          : ` · 발각 ${(this.detectionLevel * 100).toFixed(0)}%`;
     if (this.stageRule === 'SEARCHLIGHT') {
-      this.objectiveText.setText(`${story.objective}  ·  탐조등 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s  ·  ${exit}${detection}`);
+      this.objectiveText.setText(`${story.objective}  ·  탐조등 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s  ·  ${exit}${status}`);
       this.objectiveText.setColor(this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC ? '#e8e8ec' : '#9a9aa8');
       return;
     }
     if (this.stageRule === 'PRIORITY_TARGETS' || this.stageRule === 'FINAL_CORE') {
       const alive = [...this.priorityTargets].filter((e) => e.active).length;
-      this.objectiveText.setText(`${story.objective}  ·  감시 릴레이 ${alive}  ·  ${exit}${detection}`);
+      this.objectiveText.setText(`${story.objective}  ·  감시 릴레이 ${alive}  ·  ${exit}${status}`);
       this.objectiveText.setColor(alive === 0 ? '#e8e8ec' : '#ff2d2d');
       return;
     }
-    this.objectiveText.setText(`${story.objective}  ·  ${exit}${detection}`);
+    this.objectiveText.setText(`${story.objective}  ·  ${exit}${status}`);
     this.objectiveText.setColor('#7a7a88');
   }
 

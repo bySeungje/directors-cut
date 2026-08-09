@@ -97,6 +97,7 @@ const RELAY_SCAN_SPEED = 0.0011;
 type PatrolPoint = { x: number; y: number };
 export interface EnemyBehaviorContext {
   canSeePlayer?: (enemy: Enemy, range: number, fov: number) => boolean;
+  investigationPoint?: { x: number; y: number } | null;
 }
 
 // ── 텍스처 생성 (Graphics.generateTexture — 에셋 파일 0개) ────────────────
@@ -488,11 +489,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (seesPlayer) this.alertUntil = time + GUARD_ALERT_MS;
 
     if (time < this.alertUntil) {
-      if (isEvasive()) this.updateEvasive(time, player);
-      else if (isEncircle()) this.updateEncircle(time, player);
-      else if (isIntercept()) this.updateIntercept(player);
-      else this.scene.physics.moveToObject(this, player, this.moveSpeed);
-      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
+      const target = seesPlayer ? player : context.investigationPoint;
+      if (!target) {
+        this.updatePatrol(time, this.moveSpeed * 0.92);
+        return;
+      }
+      if (seesPlayer && isEvasive()) this.updateEvasive(time, player);
+      else if (seesPlayer && isEncircle()) this.updateEncircle(time, player);
+      else if (seesPlayer && isIntercept()) this.updateIntercept(player);
+      else this.scene.physics.moveTo(this, target.x, target.y, this.moveSpeed);
+      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y));
       return;
     }
 
@@ -505,6 +511,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.alertUntil = time + GUARD_ALERT_MS * 0.75;
       this.scene.physics.moveToObject(this, player, this.moveSpeed * 0.72);
       this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
+      return;
+    }
+    if (time < this.alertUntil && context.investigationPoint) {
+      this.scene.physics.moveTo(this, context.investigationPoint.x, context.investigationPoint.y, this.moveSpeed * 0.52);
+      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, context.investigationPoint.x, context.investigationPoint.y));
       return;
     }
 
@@ -589,6 +600,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (seesPlayer) {
       this.body.setVelocity(0, 0);
       this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
+    } else if (time < this.alertUntil && context.investigationPoint) {
+      this.scene.physics.moveTo(this, context.investigationPoint.x, context.investigationPoint.y, this.moveSpeed * 0.74);
+      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, context.investigationPoint.x, context.investigationPoint.y));
     } else {
       this.updatePatrol(time, this.moveSpeed * 0.86);
       if (this.body.velocity.lengthSq() < 4) {
