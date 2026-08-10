@@ -94,6 +94,8 @@ export class ArenaScene extends Phaser.Scene {
   private warnKind: WarnKind | null = null;
   private markerObjects: Phaser.GameObjects.GameObject[] = [];
   private firstObservationDone = false;
+  /** 이번 웨이브에서 실시간 지목을 이미 띄웠는가 — 웨이브당 1회로 제한한다(도배 금지). */
+  private calloutDone = false;
   /** 예고한 자리에 선 집행자. 일반 적 그룹 밖이라 웨이브 클리어 조건에 끼지 않는다. */
   private enforcer: Enforcer | null = null;
   private enforcerRing!: Phaser.GameObjects.Graphics;
@@ -208,6 +210,7 @@ export class ArenaScene extends Phaser.Scene {
     this.warnObjects = [];
     this.markerObjects = [];
     this.firstObservationDone = false;
+    this.calloutDone = false;
     this.enforcer = null;
 
     this.createHud();
@@ -256,6 +259,7 @@ export class ArenaScene extends Phaser.Scene {
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     this.updateEnforcer(time);
+    this.maybeCallout();
     this.maybeFirstObservation();
 
     const enemyList = this.enemies.getChildren() as Enemy[];
@@ -268,6 +272,32 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
 
     this.updateHud();
+  }
+
+  /** **실시간 지목** — 예고한 습관이 임계를 넘는 그 순간, 플레이어 옆에서 짚는다.
+   *
+   *  이것이 없으면 AI는 웨이브 사이에만 말한다. 전투 40초 동안 증거가 좌상단 작은 미터뿐이라
+   *  플레이어는 싸우느라 그것을 보지 않고, 결과적으로 **감시가 아니라 사후 리포트**로 읽힌다.
+   *  지목이 행동과 같은 순간·같은 자리에 뜨면 시차와 거리가 0이 되어 "지금 나를 보고 있다"가 된다.
+   *
+   *  웨이브당 1회로 제한한다 — 반복되면 잔소리가 되고, 한 번이라 소름이 된다. */
+  private maybeCallout() {
+    if (this.calloutDone || !this.prediction || this.playerDead) return;
+    const def = HABITS[this.prediction];
+    const r = this.currentReading();
+    if (def.read(r) < def.threshold) return;
+    this.calloutDone = true;
+
+    const t = this.add.text(this.player.x, this.player.y - 44, '또 여기다', {
+      fontFamily: 'monospace', fontSize: '17px', color: '#ff2d2d', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 50);
+    const ring = this.add.graphics().setDepth(HUD_DEPTH + 45);
+    ring.lineStyle(2, 0xff2d2d, 0.9);
+    ring.strokeCircle(this.player.x, this.player.y, 34);
+    this.tweens.add({
+      targets: [t, ring], alpha: 0, duration: 1100, delay: 500,
+      onComplete: () => { t.destroy(); ring.destroy(); },
+    });
   }
 
   /** 집행자 봉쇄 반경을 바닥에 그린다 — 안으로 들어와야 탄이 통한다는 것을 형태로 보여준다. */
@@ -445,6 +475,7 @@ export class ArenaScene extends Phaser.Scene {
    *  runDirective 안에서만 호출된다) — 적 0기 상태로 웨이브가 즉시 클리어되지 않는다. */
   private beginWave(d: Directive) {
     this.waveClearedEmitted = false;
+    this.calloutDone = false;
     this.enemiesSpawned = false;
     this.activeMutation = d.mutation;
 
@@ -477,12 +508,25 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  /** 예고한 자리에 집행자를 세운다. 위치는 결정론(enforcerPosition)이라 예고와 어긋날 수 없다. */
+  /** 집행자를 **내가 가장 오래 머문 바로 그 지점**에 세운다.
+   *
+   *  방면 계산 위치(enforcerPosition)는 폴백이다. 핫스팟이 있으면 그쪽이 훨씬 개인적이다 —
+   *  "왼쪽에 세웠다"가 아니라 "네가 서 있던 자리에 세웠다"가 된다. 다만 벽에 너무 붙으면
+   *  접근이 불가능해지므로 안쪽으로 클램프한다(붙어서 깨는 것이 이 적의 존재 이유다). */
   private spawnEnforcer(dir: WarnDirection) {
     this.clearEnforcer();
-    const { x, y } = enforcerPosition(dir, this.scale.width, this.scale.height);
+    const fallback = enforcerPosition(dir, this.scale.width, this.scale.height);
+    const h = this.lastHotspot;
+    const PAD = 90;
+    const x = h ? Phaser.Math.Clamp(h.x, PAD, this.scale.width - PAD) : fallback.x;
+    const y = h ? Phaser.Math.Clamp(h.y, PAD, this.scale.height - PAD) : fallback.y;
     const e = new Enforcer(this, x, y);
     this.enforcer = e;
+    // 왜 하필 여기인지 한 줄로 말한다 — 좌표가 개인적일수록 "맞춤 공격"이 성립한다.
+    const label = this.add.text(x, y - 46, h ? '네가 서 있던 자리다' : '여기를 막는다', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#ff2d2d',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 40);
+    this.tweens.add({ targets: label, alpha: 0, delay: 2200, duration: 700, onComplete: () => label.destroy() });
     this.physics.add.overlap(this.playerBullets, e, this.handleBulletHitEnforcer, undefined, this);
   }
 
@@ -923,6 +967,11 @@ export class ArenaScene extends Phaser.Scene {
       add(this.add.text(cx, cy + 126, taken ? `${DEPRIVATION_WORD[taken]}를 가져간다` : '아무것도 빼앗기지 않았다', {
         fontFamily: 'monospace', fontSize: '16px',
         color: hit ? '#ff2d2d' : '#e8e8ec', fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+      // 디렉터의 육성 — 내가 이겼다는 것을 **AI 입으로** 들어야 "내가 AI를 읽었다"가 닫힌다.
+      // 적중 시에도 한 줄 붙여 대칭을 맞춘다(이겼을 때만 말하면 연출로 읽힌다).
+      add(this.add.text(cx, cy + 154, hit ? '읽었다. 계속 본다.' : '못 읽었다. 다시 본다.', {
+        fontFamily: 'monospace', fontSize: '15px', color: '#7a7a88',
       }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
     }
 
