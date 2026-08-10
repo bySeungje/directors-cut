@@ -53,7 +53,8 @@ await page.evaluate(() => {
     console.log('[probe]' + JSON.stringify({ type, t: Math.round(performance.now() - t0), ...extra }));
 
   let prevWarn = false, prevMarker = false, prevEnemies = 0, prevObs = false;
-  const texts = () => s.children.list.filter((o) => o.type === 'Text' && o.visible);
+  // 오버레이(관찰·예고)는 HUD_DEPTH+60, 좌상단 실시간 미터는 HUD_DEPTH. 섞이면 미터 값을 관찰로 오독한다.
+  const texts = () => s.children.list.filter((o) => o.type === 'Text' && o.visible && o.depth >= 1050);
 
   const tick = () => {
     const all = texts().map((o) => o.text);
