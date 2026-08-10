@@ -11,6 +11,10 @@ import {
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
 import { runDirective } from '../waveRunner';
+import {
+  WARN_TEXT, directionFromHotspot, habitHasDirection, sanitizeDirectiveForWarning,
+  type WarnDirection,
+} from '../warning';
 import { clearMutation, updateMutation } from '../mutations';
 import { buffedSplitCount, buffedBulletSpeed, setActiveBuff } from '../buffs';
 import { requestDirective } from '../../director/client';
@@ -37,6 +41,14 @@ const WIN_TRANSITION_DELAY_MS = 600;
 const LOSE_TRANSITION_DELAY_MS = 500;
 /** 정산 표시를 읽을 시간. 기존 waveClearSlowmo(500ms)보다 길게 잡아 슬로모가 끝난 뒤에도 잠시 남는다. */
 const STAMP_HOLD_MS = 1300;
+/** 예고가 화면에 뜬 뒤 스폰 마커가 그려지기까지 — **아직 아무 일도 일어나지 않는 시간.** 소름의 자리다. */
+const WARN_TO_MARKER_MS = 1200;
+/** 마커가 먼저 그려지고 적이 나오기까지 — 말이 먼저, 그림이 나중. */
+const MARKER_TO_SPAWN_MS = 600;
+/** 웨이브 1에서 첫 관찰이 뜨는 시각. 습관 측정 창이 12초 단위라 이 시점에 수치가 준비돼 있다. */
+const FIRST_OBSERVATION_AT_MS = 12_000;
+/** 첫 관찰이 화면을 잡는 시간(전투 정지). */
+const FIRST_OBSERVATION_HOLD_MS = 800;
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
 function isGodMode(): boolean {
@@ -65,6 +77,11 @@ export class ArenaScene extends Phaser.Scene {
   /** 가장 최근에 완료된 웨이브의 핫스팟(플레이어가 가장 오래 머문 지점) — LAVA_HOTSPOT이 실제 좌표로 소비한다.
    *  텔레메트리가 다음 웨이브용으로 교체되기 직전, snapshotCurrentWaveLog에서 뽑아둔다(교체 후면 빈 그리드라 중앙이 나온다). */
   lastHotspot: { x: number; y: number } | null = null;
+  /** 다음 웨이브에 걸린 예고 방향. null이면 예고 없는 웨이브(변주·카드 다양성이 살아난다). */
+  private warnDir: WarnDirection | null = null;
+  private warnObjects: Phaser.GameObjects.GameObject[] = [];
+  private markerObjects: Phaser.GameObjects.GameObject[] = [];
+  private firstObservationDone = false;
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
   lastDirectiveFromLLM = false;
   /** Task 8 로그 패널이 소비 — 가장 최근에 알려진 디렉티브(오프닝 포함). 인터벌 중엔 이미 다음 웨이브 몫으로 갱신된다. */
@@ -153,6 +170,10 @@ export class ArenaScene extends Phaser.Scene {
     this.prevHabit = null;
     this.score = { director: 0, player: 0 };
     this.brokePrediction = false;
+    this.warnDir = null;
+    this.warnObjects = [];
+    this.markerObjects = [];
+    this.firstObservationDone = false;
 
     this.createHud();
     attachDirectorLog(this);
@@ -198,6 +219,8 @@ export class ArenaScene extends Phaser.Scene {
       this.telemetry.recordManualAttack(); // 수동 발사 횟수 — 디렉터가 "쏘는 쪽인가 피하는 쪽인가"를 읽는 입력
     }
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
+
+    this.maybeFirstObservation();
 
     const enemyList = this.enemies.getChildren() as Enemy[];
     for (const enemy of enemyList) {
@@ -363,12 +386,144 @@ export class ArenaScene extends Phaser.Scene {
   /** 새 웨이브 시작: 디렉티브 실행(스폰+mutation). create()가 오프닝에 한해 직접 호출한다.
    *  텔레메트리 교체는 여기서 하지 않는다 — onWaveCleared가 웨이브 종료 "즉시"(인터벌 시작 전) 교체해야
    *  인터벌 창의 잔여 피해·킬이 다음 웨이브 몫으로 자연 귀속된다. */
+  /** 소름 5비트의 3·4번째 — 예고가 먼저, 마커가 그다음, 적이 마지막.
+   *
+   *  `runDirective`를 즉시 부르지 않는다. 예고가 뜬 뒤 WARN_TO_MARKER_MS 동안 **아무 일도 일어나지 않고**,
+   *  그 뒤 예고한 방향에 마커가 그려지고, 다시 MARKER_TO_SPAWN_MS 뒤에야 적이 나온다. 순서가 뒤집히면
+   *  (적이 먼저 나오고 설명이 붙으면) 같은 코드로도 소름이 나지 않는다.
+   *
+   *  `enemiesSpawned`는 이 지연 동안 false로 남아 wave-clear 판정이 보류된다(markSpawningComplete가
+   *  runDirective 안에서만 호출된다) — 적 0기 상태로 웨이브가 즉시 클리어되지 않는다. */
   private beginWave(d: Directive) {
     this.waveClearedEmitted = false;
     this.enemiesSpawned = false;
     this.activeMutation = d.mutation;
-    this.waveStartAt = this.time.now;
-    runDirective(this, d);
+
+    if (!this.warnDir) {
+      this.waveStartAt = this.time.now;
+      runDirective(this, d);
+      return;
+    }
+
+    const dir = this.warnDir;
+    this.showWarning(dir);
+    this.time.delayedCall(WARN_TO_MARKER_MS, () => {
+      if (this.playerDead || this.runEnded) return;
+      this.drawSpawnMarkers(dir);
+      this.time.delayedCall(MARKER_TO_SPAWN_MS, () => {
+        if (this.playerDead || this.runEnded) return;
+        this.clearWarning();
+        this.clearMarkers();
+        // 웨이브 시계는 적이 실제로 나오는 순간부터 — 예고 대기 1.8초가 습관 지표를 희석하면 안 된다.
+        this.waveStartAt = this.time.now;
+        runDirective(this, d);
+      });
+    });
+  }
+
+  /** 예고 — "그래서 왼쪽을 닫는다". 이 시점에 아직 아무 일도 일어나지 않는다.
+   *  HUD를 낮춰 화면을 조용하게 만든다 — 다른 요소가 계속 움직이면 이 1.2초가 정적으로 읽히지 않는다. */
+  private showWarning(dir: WarnDirection) {
+    this.clearWarning();
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2 - 30;
+    const t = this.add.text(cx, cy, WARN_TEXT[dir], {
+      fontFamily: 'monospace', fontSize: '28px', color: '#ff2d2d', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60).setAlpha(0);
+    this.tweens.add({ targets: t, alpha: 1, duration: 220 });
+    this.warnObjects = [t];
+    this.setHudDimmed(true);
+  }
+
+  private clearWarning() {
+    for (const o of this.warnObjects) o.destroy();
+    this.warnObjects = [];
+    this.setHudDimmed(false);
+  }
+
+  /** 예고한 변에 스폰 마커를 **적보다 먼저** 그린다. 말이 먼저, 그림이 나중. */
+  private drawSpawnMarkers(dir: WarnDirection) {
+    this.clearMarkers();
+    const { width: w, height: h } = this.scale;
+    const g = this.add.graphics().setDepth(HUD_DEPTH + 40);
+    g.fillStyle(0xff2d2d, 0.85);
+    const TICK = 26, THICK = 5, N = 7;
+    for (let i = 1; i <= N; i++) {
+      const f = i / (N + 1);
+      if (dir === 'N') g.fillRect(w * f - TICK / 2, 0, TICK, THICK);
+      else if (dir === 'S') g.fillRect(w * f - TICK / 2, h - THICK, TICK, THICK);
+      else if (dir === 'W') g.fillRect(0, h * f - TICK / 2, THICK, TICK);
+      else g.fillRect(w - THICK, h * f - TICK / 2, THICK, TICK);
+    }
+    this.tweens.add({ targets: g, alpha: { from: 0.25, to: 1 }, duration: 300, yoyo: true, repeat: 1 });
+    this.markerObjects = [g];
+  }
+
+  private clearMarkers() {
+    for (const o of this.markerObjects) o.destroy();
+    this.markerObjects = [];
+  }
+
+  /** 예고 1.2초 동안 HUD를 낮춘다 — 정적이 소름을 만든다. */
+  private setHudDimmed(on: boolean) {
+    const a = on ? 0.25 : 1;
+    this.waveText.setAlpha(a);
+    this.predictionText.setAlpha(a);
+    this.predictionMeter.setAlpha(a);
+    this.dashGauge.setAlpha(a);
+    for (const heart of this.hearts) heart.setAlpha(a);
+  }
+
+  /** 소름 5비트의 2번째를 **웨이브 1 안으로 당긴다.**
+   *
+   *  관찰을 웨이브 종료에 매달면, 수동 사격 전환으로 웨이브 1이 길어진 만큼 첫 관찰이 밀린다 —
+   *  못 하는 사람일수록 이 게임의 핵심을 못 보게 된다. 그래서 12초 지점에서 전투를 0.8초 멈추고
+   *  화면 중앙에 첫 관찰을 띄운다(스펙 sc-first-observation: 30초 이내 보장).
+   *
+   *  **습관이 하나도 임계를 못 넘으면 판정 모듈은 null을 반환한다** — 잘 움직이는 플레이어에게는
+   *  정상 동작이다(`habits.ts` 주석). 그런데 그대로 침묵하면 **잘 움직이는 심사자에게만 첫 비트가
+   *  안 뜬다.** `docs/_hub/nodes/C-zero-is-absence.md`의 사고 그대로 — 0은 낮음이 아니라 데이터 없음이다.
+   *  그래서 데이터 없음 자체를 관찰로 말한다.
+   *
+   *  완화 임계를 따로 두지 않는다 — 연출을 위해 임계를 낮추면 지표가 플레이어가 아니라 연출 요구를
+   *  재게 된다(`C-metric-owner-check`). 판정은 기존 임계 그대로 간다. */
+  private maybeFirstObservation() {
+    if (this.firstObservationDone || this.currentWave !== 1) return;
+    if (this.time.now - this.waveStartAt < FIRST_OBSERVATION_AT_MS) return;
+    this.firstObservationDone = true;
+
+    const reading = this.currentReading();
+    const habit = detectHabit(reading, null);
+    const line = habit
+      ? HABITS[habit].evidence(reading)   // 실측 수치가 박힌 근거 문자열 — 새로 만들지 않고 그대로 쓴다
+      : '아직 패턴을 안 만들었다';
+    const tail = habit ? `"${HABITS[habit].claim}"` : '계속 보겠다';
+
+    this.enterIntermissionPause();
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2 - 20;
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    objs.push(this.add.text(cx, cy - 46, '관 찰', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#ff2d2d', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    objs.push(this.add.text(cx, cy, line, {
+      fontFamily: 'monospace', fontSize: '26px', color: '#e8e8ec', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    objs.push(this.add.text(cx, cy + 38, tail, {
+      fontFamily: 'monospace', fontSize: '15px', color: '#7a7a88',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    if (this.lastHotspot || habit) {
+      const h = this.telemetry.getHotspot();
+      const ring = this.add.graphics().setDepth(HUD_DEPTH + 55);
+      ring.lineStyle(2, 0xff2d2d, 0.7);
+      ring.strokeCircle(h.x, h.y, 46);
+      objs.push(ring);
+    }
+
+    this.time.delayedCall(FIRST_OBSERVATION_HOLD_MS, () => {
+      for (const o of objs) o.destroy();
+      if (!this.playerDead && !this.runEnded) this.exitIntermissionPause();
+    });
   }
 
   /** onWaveCleared·onPlayerDied가 공유하는 웨이브 로그 스냅샷. finish()가 반환하는 damageSources/combat.kills는
@@ -448,6 +603,12 @@ export class ArenaScene extends Phaser.Scene {
     this.prediction = log.dominantHabit ?? null;
     if (this.prediction) this.prevHabit = this.prediction;
 
+    // 예고 방향은 **엔진이 결정론으로** 정한다 — LLM이 죽어도 예고와 스폰의 인과가 유지된다(req-llm-fallback).
+    // 위치 습관(한자리·한 구석)만 방향을 갖는다. 대시 습관은 방향이 없으므로 예고 없는 웨이브가 된다.
+    this.warnDir = habitHasDirection(this.prediction) && this.lastHotspot
+      ? directionFromHotspot(this.lastHotspot.x, this.lastHotspot.y, this.scale.width, this.scale.height)
+      : null;
+
     this.prevMutation = this.activeMutation;
     clearMutation(this);
     waveClearSlowmo(this);
@@ -480,10 +641,14 @@ export class ArenaScene extends Phaser.Scene {
     Promise.all([
       requestDirective(log, nextWave, this.prevMutation, this.prevBuff, this.prevDeny),
       stampHold,
-    ]).then(([{ directive, fromLLM }]) => {
+    ]).then(([{ directive: rawDirective, fromLLM }]) => {
       if (this.playerDead) return; // 인터벌 대기 중 잔여 적탄에 맞아 사망하는 경우 다음 웨이브를 시작하지 않는다
       this.clearStamp(); // 인터벌 오버레이와 겹치지 않게 걷는다
       this.lastDirectiveFromLLM = fromLLM;
+      // 예고한 방향과 실제로 벌어지는 일을 일치시킨다 — 스폰 방향 강제 + 인과를 지우는 변주·카드 차단.
+      // (FOG는 depth 500으로 예고한 쪽을 덮고, ENCIRCLE은 5.6초 만에 방향 읽기를 지운다.)
+      // LLM이 무엇을 골랐든 화면의 인과가 우선이다 — 좌표·방향은 언제나 엔진 소유다.
+      const directive = sanitizeDirectiveForWarning(rawDirective, this.warnDir);
       this.lastDirective = directive;
       // directive.buff는 검증을 거친 최종값이라 다음 웨이브가 실제로 실행할 buff와 동일하다 — 그 웨이브가
       // 끝나 다음 requestDirective를 부를 때 "직전 buff"로 정확히 이 값을 참조하도록 미리 갱신해둔다.
