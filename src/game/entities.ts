@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
 import { shouldFire } from './fireRule';
+import type { Deprivation } from './settlement';
 import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
@@ -235,9 +236,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (healedBy > 0) this.hp = Math.min(this.stats.maxHp, this.hp + healedBy);
   }
 
-  /** 디렉터가 예고를 적중시킨 다음 웨이브 동안 참 — 대시를 쓸 수 없다.
+  /** 디렉터가 이번 웨이브 동안 가져간 능력. null이면 온전한 상태.
    *  강화가 아니라 박탈이 이 게임의 대응 방식이다(settlement.ts 참조). */
-  dashLocked = false;
+  deprivation: Deprivation = null;
+
+  /** 대시 봉인 여부 — HUD와 handleDash가 읽는다. */
+  get dashLocked(): boolean { return this.deprivation === 'DASH_LOCK'; }
+
+  /** 박탈이 반영된 실효 발사 간격. 연사를 빼앗기면 두 배로 느려진다. */
+  private effectiveFireRate(): number {
+    return this.deprivation === 'SLOW_FIRE' ? this.stats.fireRateMs * 2 : this.stats.fireRateMs;
+  }
+
+  /** 박탈이 반영된 실효 동시 발사 수. 다중 발사를 빼앗기면 한 발이다. */
+  private effectiveMultishot(): number {
+    return this.deprivation === 'NO_MULTI' ? 1 : this.stats.multishot;
+  }
 
   /** 0(직후)~1(사용 가능) — HUD 게이지용 */
   dashReadyFraction(time: number): number {
@@ -264,9 +278,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const pointer = this.scene.input.activePointer;
     this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, pointer.worldX, pointer.worldY));
 
-    if (!shouldFire(pointer.isDown, time, this.lastFireAt, this.stats.fireRateMs)) return [];
+    if (!shouldFire(pointer.isDown, time, this.lastFireAt, this.effectiveFireRate())) return [];
     this.lastFireAt = time;
-    return computeMultishotAngles(this.rotation, this.stats.multishot);
+    return computeMultishotAngles(this.rotation, this.effectiveMultishot());
   }
 
   private handleMovement(time: number) {

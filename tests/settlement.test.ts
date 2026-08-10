@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  nextMultiplier, killGain, deprivationFor,
+  nextMultiplier, killGain, chooseDeprivation, DEPRIVATION_WORD,
   MULT_START, MULT_MIN, MULT_MAX, KILL_SCORE,
 } from '../src/game/settlement';
 
@@ -55,27 +55,51 @@ describe('배수 정산', () => {
   });
 });
 
-describe('박탈 — 강화가 아니라 빼앗는다', () => {
-  it('읽히면(적중) 대시를 잃는다', () => {
-    expect(deprivationFor('HIT')).toBe('DASH_LOCK');
+describe('박탈 — 강화가 아니라, 기대는 것을 골라 빼앗는다', () => {
+  const plain = { dashUptime: 0.1, multishot: 1, accuracy: 0.9 };
+
+  it('예고를 깨면 아무것도 잃지 않는다 — 읽는 것이 곧 능력을 지키는 일이다', () => {
+    expect(chooseDeprivation('BROKEN', plain)).toBe(null);
+    expect(chooseDeprivation('VOID', plain)).toBe(null);
   });
 
-  it('예고를 깨면 잃지 않는다 — 읽는 것이 곧 능력을 지키는 일이다', () => {
-    expect(deprivationFor('BROKEN')).toBe(null);
+  it('대시에 기대면 대시를 가져간다', () => {
+    expect(chooseDeprivation('HIT', { ...plain, dashUptime: 0.8 })).toBe('DASH_LOCK');
   });
 
-  it('무효 판정은 아무것도 가져가지 않는다', () => {
-    expect(deprivationFor('VOID')).toBe(null);
+  it('다중 발사를 들고 있으면 그것을 봉인한다', () => {
+    expect(chooseDeprivation('HIT', { ...plain, multishot: 3 })).toBe('NO_MULTI');
   });
 
-  it('박탈은 변주가 아니다 — 변주로 빼앗으면 판정이 무효가 되고 배수가 영원히 멈춘다', () => {
-    // docs/_hub/nodes/C-mutation-judge-collision.md: 변주가 판정 지표를 강제하면 그 웨이브는 VOID다.
-    // 용암으로 자리를 뺏으면 위치 판정이 VOID → nextMultiplier가 움직이지 않음 → 정산이 죽는다.
-    // 대시 봉인은 플레이어 상태라 어떤 습관 지표도 강제하지 않는다.
-    const kinds = ['HIT', 'BROKEN', 'VOID'] as const;
-    for (const v of kinds) {
-      const d = deprivationFor(v);
-      expect(d === null || d === 'DASH_LOCK').toBe(true);
+  it('난사로 커버하면 연사를 절반으로 만든다', () => {
+    expect(chooseDeprivation('HIT', { ...plain, accuracy: 0.3 })).toBe('SLOW_FIRE');
+  });
+
+  it('무엇에도 두드러지게 기대지 않으면 가장 보편적인 의존(대시)으로 떨어진다', () => {
+    expect(chooseDeprivation('HIT', plain)).toBe('DASH_LOCK');
+  });
+
+  it('같은 사람에게 항상 같은 것을 뺏지 않는다 — 기대는 것이 바뀌면 뺏는 것도 바뀐다', () => {
+    const picks = new Set([
+      chooseDeprivation('HIT', { dashUptime: 0.9, multishot: 1, accuracy: 0.9 }),
+      chooseDeprivation('HIT', { dashUptime: 0.1, multishot: 3, accuracy: 0.9 }),
+      chooseDeprivation('HIT', { dashUptime: 0.1, multishot: 1, accuracy: 0.2 }),
+    ]);
+    expect(picks.size).toBe(3);
+  });
+
+  it('모든 박탈이 사람 말 이름을 갖는다 — 화면과 로그가 같은 단어를 쓴다', () => {
+    for (const k of ['DASH_LOCK', 'NO_MULTI', 'SLOW_FIRE'] as const) {
+      expect(DEPRIVATION_WORD[k].length).toBeGreaterThan(0);
+    }
+  });
+
+  it('박탈은 전부 플레이어 상태다 — 변주로 빼앗으면 판정이 VOID가 되고 배수가 영원히 멈춘다', () => {
+    // docs/_hub/nodes/C-mutation-judge-collision.md. ANCHOR는 LAVA_HOTSPOT에, CORNER는
+    // LAVA_LEFT/RIGHT에 무효 처리되도록 이미 등재돼 있다 — 용암으로 자리를 뺏었다면 정산이 죽었다.
+    const all = ['DASH_LOCK', 'NO_MULTI', 'SLOW_FIRE', null];
+    for (const v of ['HIT', 'BROKEN', 'VOID'] as const) {
+      expect(all).toContain(chooseDeprivation(v, plain));
     }
   });
 });

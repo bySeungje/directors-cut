@@ -11,7 +11,7 @@ import {
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
 import { runDirective } from '../waveRunner';
-import { nextMultiplier, killGain, deprivationFor, MULT_START } from '../settlement';
+import { nextMultiplier, killGain, chooseDeprivation, DEPRIVATION_WORD, MULT_START } from '../settlement';
 import { browserStore, saveRun, loadRuns, recallLine, type RunRecord } from '../memory';
 import {
   directionFromHotspot, directionAheadOfOrbit, warnKindFor, warnLine,
@@ -128,6 +128,8 @@ export class ArenaScene extends Phaser.Scene {
   private multiplier = MULT_START;
   /** 런 누적 점수 — 처치마다 배수가 곱해져 즉시 오른다. */
   private runScore = 0;
+  /** 직전 웨이브 명중률 — 박탈 선택의 입력(난사로 커버하는가). */
+  private lastAccuracy = 0;
   /** 이 런에서 디렉터가 지목한 습관들 — 종료 시 로컬 기억에 남는다. */
   private habitsThisRun: HabitId[] = [];
   /** 이전 런들(이번 런 저장 전). 예고 비트에서 "3판째"를 말하는 데 쓴다. */
@@ -141,6 +143,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private waveText!: Phaser.GameObjects.Text;
   private scoreText!: Phaser.GameObjects.Text;
+  private deprivationText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
   private muteText!: Phaser.GameObjects.Text;
@@ -191,6 +194,7 @@ export class ArenaScene extends Phaser.Scene {
     this.score = { director: 0, player: 0 };
     this.multiplier = MULT_START;
     this.runScore = 0;
+    this.lastAccuracy = 0;
     this.habitsThisRun = [];
     this.priorRuns = loadRuns(browserStore());
     this.brokePrediction = false;
@@ -520,6 +524,7 @@ export class ArenaScene extends Phaser.Scene {
     this.predictionMeter.setAlpha(a);
     this.dashGauge.setAlpha(a);
     this.scoreText.setAlpha(a);
+    this.deprivationText.setAlpha(a);
     for (const heart of this.hearts) heart.setAlpha(a);
   }
 
@@ -639,8 +644,13 @@ export class ArenaScene extends Phaser.Scene {
     else if (verdict === 'BROKEN') this.score.player++;
     // 배수는 실력이 아니라 **읽기**에 붙는다. 잘 쏴서 오르지 않는다.
     this.multiplier = nextMultiplier(this.multiplier, verdict);
-    // 박탈 — 읽혔으면 기대던 것을 잃는다. 강화(더 단단한 적)는 결정을 바꾸지 않고 시간만 늘린다.
-    this.player.dashLocked = deprivationFor(verdict) === 'DASH_LOCK';
+    // 박탈 — 읽혔으면 **기대던 것**을 잃는다. 무엇을 뺏을지는 실측에서 고른다(항상 같은 것을 뺏으면
+    // 두 판이면 예측 가능해지고, 그러면 공략이 아니라 규칙이 하나 더 있는 것이 된다).
+    this.player.deprivation = chooseDeprivation(verdict, {
+      dashUptime: reading.dashUptime,
+      multishot: this.player.stats.multishot,
+      accuracy: this.lastAccuracy,
+    });
     this.brokePrediction = verdict === 'BROKEN';
     this.prediction = null;
     return { habit, verdict };
@@ -649,6 +659,7 @@ export class ArenaScene extends Phaser.Scene {
   private onWaveCleared = (wave: number) => {
     const log = this.snapshotCurrentWaveLog(wave);
     this.waveLogs.push(log);
+    this.lastAccuracy = log.combat.accuracy;
 
     // 판정은 텔레메트리 교체 **전에** 한다(아래에서 교체된다). 웨이브 7도 여기를 지나므로
     // 마지막 예측이 미판정으로 남지 않는다 — 아래 FINAL_WAVE 조기 반환보다 앞이다.
@@ -839,7 +850,8 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
     // 박탈/보전 — 이 판정이 무엇을 가져갔는가. 강화가 아니라 박탈이라 다음 판의 선택이 실제로 달라진다.
     if (verdict !== 'VOID') {
-      add(this.add.text(cx, cy + 126, hit ? '대시를 가져간다' : '대시를 지켰다', {
+      const taken = this.player.deprivation;
+      add(this.add.text(cx, cy + 126, taken ? `${DEPRIVATION_WORD[taken]}를 가져간다` : '아무것도 빼앗기지 않았다', {
         fontFamily: 'monospace', fontSize: '16px',
         color: hit ? '#ff2d2d' : '#e8e8ec', fontStyle: 'bold',
       }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
@@ -900,6 +912,10 @@ export class ArenaScene extends Phaser.Scene {
         fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec', fontStyle: 'bold', align: 'right',
       })
       .setOrigin(1, 0).setDepth(HUD_DEPTH);
+    // 박탈 표시 — 대시 게이지 옆. 디렉터가 가져간 것이 상시 보여야 "읽히면 잃는다"가 성립한다.
+    this.deprivationText = this.add
+      .text(124, 60, '', { fontFamily: 'monospace', fontSize: '12px', color: '#ff2d2d', fontStyle: 'bold' })
+      .setDepth(HUD_DEPTH);
     this.syncHearts();
     this.updateHud();
   }
@@ -927,6 +943,9 @@ export class ArenaScene extends Phaser.Scene {
       const frac = this.player.dashReadyFraction(this.time.now);
       this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
     }
+    // 무엇을 빼앗겼는지 — 게이지만으로는 대시 외의 박탈이 화면에 안 보인다.
+    const taken = this.player.deprivation;
+    this.deprivationText.setText(taken ? `${DEPRIVATION_WORD[taken]} 봉인` : '').setVisible(!!taken);
 
     this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
     this.updatePredictionMeter();
