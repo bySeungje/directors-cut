@@ -20,6 +20,12 @@ export interface HabitReading {
   corner: number;
   anchor: number;
   dashUptime: number;
+  /** 선회 일관성 0~1 (한 방향으로만 도는가) */
+  orbit: number;
+  /** 선회 방향 +1 시계 / -1 반시계 / 0 미판정 */
+  orbitSign: number;
+  /** 미세 회피 0~1 (많이 움직이는데 좁은 반경에서만) */
+  micro: number;
 }
 
 export type Verdict = 'HIT' | 'BROKEN' | 'VOID';
@@ -72,6 +78,34 @@ export const HABITS: Record<HabitId, HabitDef> = {
     // max(quadrantTime) ≥ 0.50이 확정된다. 플레이어의 행동과 무관한 적중이 된다.
     voidedBy: ['LAVA_LEFT', 'LAVA_RIGHT'],
     evidence: (r) => `한 사분면 체류 ${Math.round(r.corner * 100)}%`,
+  },
+  /** 선회 손잡이 — "너는 항상 같은 쪽으로 돈다".
+   *
+   *  위치 습관(ANCHOR/CORNER)은 **어디 있는가**를 재고, 이건 **어떻게 움직이는가**를 잰다.
+   *  아레나를 넓게 도는 플레이어는 위치 습관에 절대 안 걸리는데(사분면이 고르게 나온다), 그 사람도
+   *  대개 한 방향으로만 돈다. 그 축이 없으면 "잘 움직이는 사람에게는 AI가 아무 말도 못 하는" 게임이 된다.
+   *
+   *  0.72 = 총 회전량의 72% 이상이 한 방향 순합. 왔다갔다 하면 순합이 상쇄돼 낮아진다. */
+  ORBIT: {
+    claim: '너는 항상 같은 쪽으로 돈다',
+    label: '선회',
+    threshold: 0.72,
+    read: (r) => r.orbit,
+    voidedBy: ['SHRINK_ARENA'], // 아레나가 좁아지면 선회 자체가 강제된다 — 디렉터가 지표를 만든 셈
+    evidence: (r) => `${r.orbitSign > 0 ? '시계' : '반시계'} 방향 선회 ${Math.round(r.orbit * 100)}%`,
+  },
+  /** 미세 회피 — "너는 제자리에서 흔들어 피한다".
+   *
+   *  ANCHOR와 다르다: 저쪽은 **안 움직이는** 것이고 이쪽은 **많이 움직이는데 좁은 반경**이다.
+   *  탄만 최소 동작으로 흘리는 플레이가 여기 걸린다. 경로 길이 하한(900px)을 함께 걸어
+   *  "가만히 있어서 반경이 작은" 경우를 배제한다(C-zero-is-absence 계열). */
+  MICRO: {
+    claim: '너는 제자리에서 흔들어 피한다',
+    label: '미세회피',
+    threshold: 0.62,
+    read: (r) => r.micro,
+    voidedBy: ['SHRINK_ARENA', 'FOG'], // 둘 다 플레이어를 좁은 반경에 묶는다
+    evidence: (r) => `회전반경 ${Math.round((1 - r.micro) * 150)}px 안에서 이동`,
   },
   DASH: {
     claim: '너는 대시에 의존한다',

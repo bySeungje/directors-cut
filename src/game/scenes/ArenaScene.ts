@@ -12,8 +12,8 @@ import {
 } from '../entities';
 import { runDirective } from '../waveRunner';
 import {
-  WARN_TEXT, directionFromHotspot, habitHasDirection, sanitizeDirectiveForWarning,
-  type WarnDirection,
+  directionFromHotspot, directionAheadOfOrbit, warnKindFor, warnLine,
+  sanitizeDirectiveForWarning, type WarnDirection, type WarnKind,
 } from '../warning';
 import { clearMutation, updateMutation } from '../mutations';
 import { buffedSplitCount, buffedBulletSpeed, setActiveBuff } from '../buffs';
@@ -84,6 +84,8 @@ export class ArenaScene extends Phaser.Scene {
   private warnObjects: Phaser.GameObjects.GameObject[] = [];
   /** 예고 직전에 보여줄 관찰 문장(실측 수치). 원인 없이 결과만 보면 소름이 아니라 난이도가 된다. */
   private warnObservation: string | null = null;
+  /** 이 예고를 무엇으로 갚는가 — CLOSE(방면을 닫음) / CUT(도는 앞을 끊음) / BURN(선 자리를 태움). */
+  private warnKind: WarnKind | null = null;
   private markerObjects: Phaser.GameObjects.GameObject[] = [];
   private firstObservationDone = false;
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
@@ -176,6 +178,7 @@ export class ArenaScene extends Phaser.Scene {
     this.brokePrediction = false;
     this.warnDir = null;
     this.warnObservation = null;
+    this.warnKind = null;
     this.warnObjects = [];
     this.markerObjects = [];
     this.firstObservationDone = false;
@@ -437,7 +440,7 @@ export class ArenaScene extends Phaser.Scene {
   private showWarning(dir: WarnDirection) {
     const cx = this.scale.width / 2;
     const cy = this.scale.height / 2 + 16; // 관찰 줄 아래 — 원인 위에 결과가 쌓이는 배치
-    const t = this.add.text(cx, cy, WARN_TEXT[dir], {
+    const t = this.add.text(cx, cy, warnLine(this.warnKind ?? 'CLOSE', dir), {
       fontFamily: 'monospace', fontSize: '28px', color: '#ff2d2d', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60).setAlpha(0);
     this.tweens.add({ targets: t, alpha: 1, duration: 220 });
@@ -566,6 +569,9 @@ export class ArenaScene extends Phaser.Scene {
       corner: s.corner,
       anchor: s.anchor,
       dashUptime: Math.min(1, this.telemetry.dashCount() / elapsed / maxRate),
+      orbit: s.orbit,
+      orbitSign: s.orbitSign,
+      micro: s.micro,
     };
   }
 
@@ -630,8 +636,15 @@ export class ArenaScene extends Phaser.Scene {
 
     // 예고 방향은 **엔진이 결정론으로** 정한다 — LLM이 죽어도 예고와 스폰의 인과가 유지된다(req-llm-fallback).
     // 위치 습관(한자리·한 구석)만 방향을 갖는다. 대시 습관은 방향이 없으므로 예고 없는 웨이브가 된다.
-    this.warnDir = habitHasDirection(this.prediction) && this.lastHotspot
-      ? directionFromHotspot(this.lastHotspot.x, this.lastHotspot.y, this.scale.width, this.scale.height)
+    // 습관마다 **갚는 방식이 다르다.** 물량을 늘리는 것은 습관을 읽은 결과가 아니라 시간의 결과다.
+    //   위치 습관 → 머문 방면을 닫는다 · 선회 습관 → 도는 앞을 끊는다 · 미세회피 → 선 자리를 태운다
+    this.warnKind = warnKindFor(this.prediction);
+    const h = this.lastHotspot;
+    const { width: aw, height: ah } = this.scale;
+    this.warnDir = this.warnKind && h
+      ? (this.warnKind === 'CUT'
+          ? directionAheadOfOrbit(this.player.x, this.player.y, aw, ah, reading.orbitSign)
+          : directionFromHotspot(h.x, h.y, aw, ah))
       : null;
     // 예고와 함께 보여줄 **원인**. habits.ts가 이미 만드는 근거 문자열을 그대로 쓴다(새로 만들지 않는다).
     this.warnObservation = this.warnDir && this.prediction ? HABITS[this.prediction].evidence(reading) : null;
@@ -675,7 +688,7 @@ export class ArenaScene extends Phaser.Scene {
       // 예고한 방향과 실제로 벌어지는 일을 일치시킨다 — 스폰 방향 강제 + 인과를 지우는 변주·카드 차단.
       // (FOG는 depth 500으로 예고한 쪽을 덮고, ENCIRCLE은 5.6초 만에 방향 읽기를 지운다.)
       // LLM이 무엇을 골랐든 화면의 인과가 우선이다 — 좌표·방향은 언제나 엔진 소유다.
-      const directive = sanitizeDirectiveForWarning(rawDirective, this.warnDir);
+      const directive = sanitizeDirectiveForWarning(rawDirective, this.warnDir, this.warnKind);
       this.lastDirective = directive;
       // directive.buff는 검증을 거친 최종값이라 다음 웨이브가 실제로 실행할 buff와 동일하다 — 그 웨이브가
       // 끝나 다음 requestDirective를 부를 때 "직전 buff"로 정확히 이 값을 참조하도록 미리 갱신해둔다.

@@ -14,7 +14,10 @@ export const DENY_TARGETS = [
 /** 플레이어 습관 어휘. `WaveLog`를 타고 프롬프트에 실리므로 계약이 소유한다 —
  *  단 `DirectiveSchema`/`DIRECTIVE_JSON_SCHEMA`(LLM 출력)에는 들어가지 않으므로
  *  프록시 수동 사본과 무관하다. 판정 규칙은 `src/game/habits.ts`. */
-export const HABIT_IDS = ['ANCHOR', 'CORNER', 'DASH'] as const;
+/** 습관 어휘. **LLM 출력 스키마가 아니다** — WaveLog(입력)의 dominantHabit과 로컬 판정에만 쓰이므로
+ *  여기에 항목을 더해도 DIRECTIVE_JSON_SCHEMA는 변하지 않고 프록시 재배포도 필요 없다.
+ *  2026-08-10 추가: 위치 3종만으로는 "AI가 나를 공략한다"가 얕다는 판정(승제)에 따라 운동학 2종을 넣었다. */
+export const HABIT_IDS = ['ANCHOR', 'CORNER', 'ORBIT', 'MICRO', 'DASH'] as const;
 export type HabitId = (typeof HABIT_IDS)[number];
 
 export type EnemyType = (typeof ENEMY_TYPES)[number];

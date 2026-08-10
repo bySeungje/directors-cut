@@ -6,17 +6,18 @@ import {
 import { MUTATIONS } from '../src/contracts/directive';
 
 const at = (over: Partial<HabitReading> = {}): HabitReading =>
-  ({ corner: 0, anchor: 0, dashUptime: 0, ...over });
+  ({ corner: 0, anchor: 0, dashUptime: 0, orbit: 0, orbitSign: 0, micro: 0, ...over });
 
 /** 해당 습관만 임계를 넘긴 입력 */
 const only = (id: HabitId, mult = 1.2): HabitReading => {
   const t = HABITS[id].threshold * mult;
-  return at(id === 'ANCHOR' ? { anchor: t } : id === 'CORNER' ? { corner: t } : { dashUptime: t });
+  const key = { ANCHOR: 'anchor', CORNER: 'corner', ORBIT: 'orbit', MICRO: 'micro', DASH: 'dashUptime' }[id];
+  return at({ [key]: t, ...(id === 'ORBIT' ? { orbitSign: 1 } : {}) } as Partial<HabitReading>);
 };
 
 describe('습관 어휘', () => {
-  it('3종이고 전부 명제·라벨·근거 표시를 갖는다', () => {
-    expect(HABIT_IDS).toHaveLength(3);
+  it('5종이고 전부 명제·라벨·근거 표시를 갖는다', () => {
+    expect(HABIT_IDS).toHaveLength(5);
     for (const id of HABIT_IDS) {
       expect(HABITS[id].claim.length).toBeGreaterThan(0);
       expect(HABITS[id].label.length).toBeGreaterThan(0);

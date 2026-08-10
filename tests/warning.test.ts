@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   WARN_TEXT, CARDINALS, directionFromHotspot, habitHasDirection,
-  sanitizeDirectiveForWarning, erasesCausality, type WarnDirection,
+  sanitizeDirectiveForWarning, erasesCausality, warnKindFor, warnLine, directionAheadOfOrbit,
+  type WarnDirection,
 } from '../src/game/warning';
 import { MUTATIONS, BUFF_CARDS, SPAWN_PATTERNS, type Directive } from '../src/contracts/directive';
 
@@ -97,5 +98,44 @@ describe('인과 보장 — 예고한 방향과 실제로 벌어지는 일이 �
 
   it('강제되는 스폰 값은 계약의 유효 enum이다', () => {
     for (const dir of CARDINALS) expect(SPAWN_PATTERNS).toContain(dir);
+  });
+});
+
+describe('표적 대응 — 물량이 아니라 읽은 대로 갚는다', () => {
+  it('습관마다 갚는 방식이 다르다', () => {
+    expect(warnKindFor('ANCHOR')).toBe('CLOSE');
+    expect(warnKindFor('CORNER')).toBe('CLOSE');
+    expect(warnKindFor('ORBIT')).toBe('CUT');
+    expect(warnKindFor('MICRO')).toBe('BURN');
+    expect(warnKindFor('DASH')).toBe(null);   // 방향도 자리도 없는 습관 — 예고 없는 웨이브
+    expect(warnKindFor(null)).toBe(null);
+  });
+
+  it('선회형은 머문 자리가 아니라 **도는 앞**을 막는다', () => {
+    // 오른쪽(E)에 있고 시계 방향으로 돌면 다음은 아래(S)다. 머문 자리를 닫는 CLOSE와 결과가 다르다.
+    expect(directionAheadOfOrbit(900, 320, 960, 640, +1)).toBe('S');
+    expect(directionAheadOfOrbit(900, 320, 960, 640, -1)).toBe('N');
+    expect(directionFromHotspot(900, 320, 960, 640)).toBe('E'); // 같은 위치, 다른 대응
+  });
+
+  it('미세 회피형은 방면이 아니라 선 자리를 태운다 — LAVA_HOTSPOT을 강제한다', () => {
+    const out = sanitizeDirectiveForWarning({ ...base, mutation: 'NONE' }, 'W', 'BURN');
+    expect(out.mutation).toBe('LAVA_HOTSPOT');
+  });
+
+  it('CLOSE·CUT는 변주를 강제하지 않는다 — 표적 대응은 습관별로 정확히 하나뿐이다', () => {
+    expect(sanitizeDirectiveForWarning({ ...base, mutation: 'LAVA_LEFT' }, 'W', 'CLOSE').mutation).toBe('LAVA_LEFT');
+    expect(sanitizeDirectiveForWarning({ ...base, mutation: 'LAVA_LEFT' }, 'W', 'CUT').mutation).toBe('LAVA_LEFT');
+  });
+
+  it('예고 문장이 성격마다 다르다 — 같은 말을 반복하면 읽었다는 느낌이 죽는다', () => {
+    const lines = new Set([warnLine('CLOSE', 'W'), warnLine('CUT', 'W'), warnLine('BURN', 'W')]);
+    expect(lines.size).toBe(3);
+    expect(warnLine('CUT', 'W')).toContain('앞을 끊는다');
+    expect(warnLine('BURN', 'W')).toContain('자리를 태운다');
+  });
+
+  it('kind가 없으면 디렉티브를 건드리지 않는다', () => {
+    expect(sanitizeDirectiveForWarning(base, 'W', null)).toEqual(base);
   });
 });

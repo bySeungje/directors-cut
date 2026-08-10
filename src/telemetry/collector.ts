@@ -11,6 +11,11 @@ const HOT_ROWS = 6;
  *  판정이 뒤집힌다. 상세: `docs/_hub/nodes/C-duration-normalized-metrics.md` */
 export const HABIT_WINDOW_SEC = 12;
 
+/** 미세 회피 판정의 하한 경로 길이(px). 이보다 덜 움직였으면 "많이 움직이는데 좁다"가 성립하지 않는다. */
+const MICRO_MIN_PATH_PX = 900;
+/** 미세 회피 기준 회전반경(px). 이보다 좁게 흔들면 1에 가까워진다. 아레나 960×640의 약 1/6. */
+const MICRO_REF_RADIUS_PX = 150;
+
 type QuadKey = 'NW' | 'NE' | 'SW' | 'SE';
 
 /** 창 기준 습관 지표. 살아 있는 미터와 웨이브 종료 판정이 **같은 값**을 쓴다. */
@@ -19,6 +24,14 @@ export interface HabitSample {
   corner: number;
   /** 창 안에서 최다 체류 셀의 비율 (0~1) */
   anchor: number;
+  /** 선회 일관성 (0~1). 중심 기준 누적 회전각의 **순합 / 절대합**.
+   *  1에 가까울수록 한 방향으로만 돈다. 방향은 `orbitSign`이 갖는다. */
+  orbit: number;
+  /** 선회 방향: +1 시계, -1 반시계, 0 미판정. */
+  orbitSign: number;
+  /** 미세 회피 (0~1). 이동 경로는 긴데 회전반경이 작을수록 높다 —
+   *  "제자리에서 흔들어 탄만 피하는" 플레이. anchor(가만히 있음)와 다르다: 이쪽은 많이 움직인다. */
+  micro: number;
 }
 
 export class WaveTelemetry {
@@ -39,7 +52,11 @@ export class WaveTelemetry {
   private gw = 0; private gh = 0;       // 마지막으로 본 아레나 크기(getHotspot 좌표 환산용)
 
   // ── 롤링 창 (습관 판정 전용 — 위 누적값은 LLM 프롬프트용이라 건드리지 않는다) ──
-  private win: { t: number; quad: QuadKey; cell: number; dt: number }[] = [];
+  private win: { t: number; quad: QuadKey; cell: number; dt: number; x: number; y: number; dAng: number; path: number }[] = [];
+  private winAngNet = 0;   // 부호 있는 회전각 누적 (선회 방향)
+  private winAngAbs = 0;   // 회전각 절대값 누적 (선회 총량)
+  private winPath = 0;     // 이동 경로 길이
+  private prevX = -1; private prevY = -1; private prevAng = 0;
   private winQuad: Record<QuadKey, number> = { NW: 0, NE: 0, SW: 0, SE: 0 };
   private winGrid: number[] = [];
   private winTotal = 0;
@@ -60,14 +77,32 @@ export class WaveTelemetry {
 
     // 롤링 창 — 증분 갱신 후 창 밖 샘플을 앞에서 덜어낸다(프레임당 대개 1개)
     if (this.winGrid.length === 0) this.winGrid = new Array(HOT_COLS * HOT_ROWS).fill(0);
-    this.win.push({ t: this.totalTime, quad: key, cell, dt });
+    // 운동학 — 아레나 중심 기준 각도의 부호 있는 변화량과 이동 경로 길이.
+    // 각도 차이는 ±π로 감아 큰 점프(경계 통과)를 만들지 않는다.
+    const ang = Math.atan2(y - h / 2, x - w / 2);
+    let dAng = 0, seg = 0;
+    if (this.prevX >= 0) {
+      dAng = ang - this.prevAng;
+      while (dAng > Math.PI) dAng -= Math.PI * 2;
+      while (dAng < -Math.PI) dAng += Math.PI * 2;
+      seg = Math.hypot(x - this.prevX, y - this.prevY);
+    }
+    this.prevX = x; this.prevY = y; this.prevAng = ang;
+
+    this.win.push({ t: this.totalTime, quad: key, cell, dt, x, y, dAng, path: seg });
     this.winQuad[key] += dt;
     this.winGrid[cell] += dt;
     this.winTotal += dt;
+    this.winAngNet += dAng;
+    this.winAngAbs += Math.abs(dAng);
+    this.winPath += seg;
     while (this.win.length > 0 && this.win[0].t < this.totalTime - HABIT_WINDOW_SEC) {
       const s = this.win.shift()!;
       this.winQuad[s.quad] -= s.dt;
       this.winGrid[s.cell] -= s.dt;
+      this.winAngNet -= s.dAng;
+      this.winAngAbs -= Math.abs(s.dAng);
+      this.winPath -= s.path;
       this.winTotal -= s.dt;
     }
 
@@ -101,7 +136,26 @@ export class WaveTelemetry {
     let maxQuad = 0;
     for (const k of ['NW', 'NE', 'SW', 'SE'] as QuadKey[]) if (this.winQuad[k] > maxQuad) maxQuad = this.winQuad[k];
     const maxCell = this.winGrid.length > 0 ? Math.max(...this.winGrid) : 0;
-    return { corner: maxQuad / t, anchor: maxCell / t };
+
+    // 선회 — 순합/절대합. 절대합이 충분히 쌓이기 전에는 판정하지 않는다(0은 낮음이 아니라 데이터 없음:
+    // docs/_hub/nodes/C-zero-is-absence.md). 최소 1바퀴(2π)는 돌아야 "돈다"고 말할 수 있다.
+    const orbit = this.winAngAbs >= Math.PI * 2 ? Math.abs(this.winAngNet) / this.winAngAbs : 0;
+    const orbitSign = orbit > 0 ? Math.sign(this.winAngNet) : 0;
+
+    // 미세 회피 — 경로는 긴데 회전반경이 작다. 회전반경은 창 안 좌표의 표준편차(2D).
+    // 경로가 짧으면(거의 정지) 판정하지 않는다 — 그건 anchor가 잡는 습관이지 이쪽이 아니다.
+    let micro = 0;
+    if (this.winPath >= MICRO_MIN_PATH_PX && this.win.length > 1) {
+      let sx = 0, sy = 0;
+      for (const s2 of this.win) { sx += s2.x; sy += s2.y; }
+      const mx = sx / this.win.length, my = sy / this.win.length;
+      let v = 0;
+      for (const s2 of this.win) v += (s2.x - mx) ** 2 + (s2.y - my) ** 2;
+      const gyration = Math.sqrt(v / this.win.length);
+      micro = Math.max(0, 1 - gyration / MICRO_REF_RADIUS_PX);
+    }
+
+    return { corner: maxQuad / t, anchor: maxCell / t, orbit, orbitSign, micro };
   }
 
   /** 가장 오래 머문 셀의 중심 좌표. LAVA_HOTSPOT이 쓰며, WaveLog에는 넣지 않는다(LLM에게 수치를 주지 않는다). */

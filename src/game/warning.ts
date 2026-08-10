@@ -23,6 +23,15 @@ import type { HabitId } from './habits';
 export type WarnDirection = 'N' | 'S' | 'E' | 'W';
 
 /** 예고 문장 — 화면에 뜨는 그대로. 방향은 플레이어가 머물던 쪽이고, 디렉터는 그곳을 "닫는다". */
+/** 예고의 성격 — 무엇으로 갚을 것인가.
+ *
+ *  **물량이 아니라 표적 대응이다.** 웨이브 번호를 올려 적을 더 넣는 것은 습관을 읽은 결과가 아니라
+ *  시간의 결과다. 읽었다면 읽은 대로 갚아야 한다:
+ *   - `CLOSE`  머문 방면을 닫는다 (위치 습관 — 어디 있는가)
+ *   - `CUT`    도는 앞을 끊는다 (선회 습관 — 어떻게 도는가)
+ *   - `BURN`   서 있는 자리를 태운다 (미세 회피 — 좁게 흔드는가) */
+export type WarnKind = 'CLOSE' | 'CUT' | 'BURN';
+
 export const WARN_TEXT: Record<WarnDirection, string> = {
   W: '그래서 왼쪽을 닫는다',
   E: '그래서 오른쪽을 닫는다',
@@ -70,9 +79,43 @@ export function directionFromHotspot(x: number, y: number, width: number, height
   return dy >= 0 ? 'S' : 'N';
 }
 
-/** 예고 대상이 되는 습관인가 — 위치 습관만 방향을 갖는다. 대시 습관은 방향이 없다. */
+/** 이 습관을 무엇으로 갚는가. null이면 예고 없는 웨이브(대시 습관은 방향도 자리도 없다). */
+export function warnKindFor(habit: HabitId | null): WarnKind | null {
+  if (habit === 'ANCHOR' || habit === 'CORNER') return 'CLOSE';
+  if (habit === 'ORBIT') return 'CUT';
+  if (habit === 'MICRO') return 'BURN';
+  return null;
+}
+
+/** 예고 대상이 되는 습관인가. */
 export function habitHasDirection(habit: HabitId | null): boolean {
-  return habit === 'ANCHOR' || habit === 'CORNER';
+  return warnKindFor(habit) !== null;
+}
+
+/** 선회형 대응 — **도는 앞**을 막는다. 지금 있는 각도에서 진행 방향으로 90도 앞선 방면.
+ *  머문 자리를 닫는 것(CLOSE)과 다르다: 이쪽은 플레이어가 *가려는 곳*을 먼저 잡는다. */
+export function directionAheadOfOrbit(x: number, y: number, width: number, height: number, orbitSign: number): WarnDirection {
+  const ang = Math.atan2(y - height / 2, x - width / 2);
+  const ahead = ang + (orbitSign >= 0 ? 1 : -1) * (Math.PI / 2);
+  const deg = ((ahead * 180) / Math.PI + 360) % 360;
+  if (deg >= 315 || deg < 45) return 'E';
+  if (deg < 135) return 'S';
+  if (deg < 225) return 'W';
+  return 'N';
+}
+
+/** 예고 성격별 문장. 방향이 들어가는 것은 CLOSE·CUT뿐이고 BURN은 자리를 태운다. */
+export function warnLine(kind: WarnKind, dir: WarnDirection): string {
+  if (kind === 'CLOSE') return WARN_TEXT[dir];
+  if (kind === 'CUT') return `그래서 ${DIR_WORD[dir]} 앞을 끊는다`;
+  return '그래서 네가 선 자리를 태운다';
+}
+
+const DIR_WORD: Record<WarnDirection, string> = { W: '왼쪽', E: '오른쪽', N: '위', S: '아래' };
+
+/** 예고 성격이 강제하는 변주 — 표적 대응의 실행부. BURN은 머문 자리를 실제로 태운다. */
+export function mutationForKind(kind: WarnKind): 'LAVA_HOTSPOT' | null {
+  return kind === 'BURN' ? 'LAVA_HOTSPOT' : null;
 }
 
 /**
@@ -86,12 +129,16 @@ export function habitHasDirection(habit: HabitId | null): boolean {
  *
  * 예고가 없는 웨이브(`dir === null`)에는 아무것도 건드리지 않는다 — 변주·카드의 다양성은 그때 살아난다.
  */
-export function sanitizeDirectiveForWarning(d: Directive, dir: WarnDirection | null): Directive {
-  if (!dir) return d;
+export function sanitizeDirectiveForWarning(
+  d: Directive, dir: WarnDirection | null, kind: WarnKind | null = 'CLOSE',
+): Directive {
+  if (!dir || !kind) return d;
+  const forced = mutationForKind(kind);
   return {
     ...d,
     composition: d.composition.map((c) => ({ ...c, spawn: dir as SpawnPattern })),
-    mutation: CAUSALITY_ERASING_MUTATIONS.includes(d.mutation) ? 'NONE' : d.mutation,
+    // 표적 대응이 있으면 그것을 쓰고, 없으면 인과를 지우는 변주만 걷어낸다.
+    mutation: forced ?? (CAUSALITY_ERASING_MUTATIONS.includes(d.mutation) ? 'NONE' : d.mutation),
     buff: CAUSALITY_ERASING_BUFFS.includes(d.buff) ? 'NONE' : d.buff,
   };
 }
