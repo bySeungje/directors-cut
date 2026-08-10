@@ -41,6 +41,8 @@ const WIN_TRANSITION_DELAY_MS = 600;
 const LOSE_TRANSITION_DELAY_MS = 500;
 /** 정산 표시를 읽을 시간. 기존 waveClearSlowmo(500ms)보다 길게 잡아 슬로모가 끝난 뒤에도 잠시 남는다. */
 const STAMP_HOLD_MS = 1300;
+/** 관찰(원인)이 뜨고 예고(결과)가 붙기까지. */
+const OBSERVATION_TO_WARN_MS = 1200;
 /** 예고가 화면에 뜬 뒤 스폰 마커가 그려지기까지 — **아직 아무 일도 일어나지 않는 시간.** 소름의 자리다. */
 const WARN_TO_MARKER_MS = 1200;
 /** 마커가 먼저 그려지고 적이 나오기까지 — 말이 먼저, 그림이 나중. */
@@ -80,6 +82,8 @@ export class ArenaScene extends Phaser.Scene {
   /** 다음 웨이브에 걸린 예고 방향. null이면 예고 없는 웨이브(변주·카드 다양성이 살아난다). */
   private warnDir: WarnDirection | null = null;
   private warnObjects: Phaser.GameObjects.GameObject[] = [];
+  /** 예고 직전에 보여줄 관찰 문장(실측 수치). 원인 없이 결과만 보면 소름이 아니라 난이도가 된다. */
+  private warnObservation: string | null = null;
   private markerObjects: Phaser.GameObjects.GameObject[] = [];
   private firstObservationDone = false;
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
@@ -171,6 +175,7 @@ export class ArenaScene extends Phaser.Scene {
     this.score = { director: 0, player: 0 };
     this.brokePrediction = false;
     this.warnDir = null;
+    this.warnObservation = null;
     this.warnObjects = [];
     this.markerObjects = [];
     this.firstObservationDone = false;
@@ -406,8 +411,14 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     const dir = this.warnDir;
-    this.showWarning(dir);
-    this.time.delayedCall(WARN_TO_MARKER_MS, () => {
+    // 2번째 비트 — 관찰(원인)이 먼저. 빠른 플레이어는 12초 중간 관찰을 못 보고 지나가므로,
+    // 웨이브 사이에서 원인을 반드시 한 번 보여준다. 원인 없는 예고는 소름이 아니라 난이도다.
+    this.showObservationLine(this.warnObservation);
+    this.time.delayedCall(OBSERVATION_TO_WARN_MS, () => {
+      if (this.playerDead || this.runEnded) return;
+      this.showWarning(dir);
+    });
+    this.time.delayedCall(OBSERVATION_TO_WARN_MS + WARN_TO_MARKER_MS, () => {
       if (this.playerDead || this.runEnded) return;
       this.drawSpawnMarkers(dir);
       this.time.delayedCall(MARKER_TO_SPAWN_MS, () => {
@@ -424,14 +435,28 @@ export class ArenaScene extends Phaser.Scene {
   /** 예고 — "그래서 왼쪽을 닫는다". 이 시점에 아직 아무 일도 일어나지 않는다.
    *  HUD를 낮춰 화면을 조용하게 만든다 — 다른 요소가 계속 움직이면 이 1.2초가 정적으로 읽히지 않는다. */
   private showWarning(dir: WarnDirection) {
-    this.clearWarning();
     const cx = this.scale.width / 2;
-    const cy = this.scale.height / 2 - 30;
+    const cy = this.scale.height / 2 + 16; // 관찰 줄 아래 — 원인 위에 결과가 쌓이는 배치
     const t = this.add.text(cx, cy, WARN_TEXT[dir], {
       fontFamily: 'monospace', fontSize: '28px', color: '#ff2d2d', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60).setAlpha(0);
     this.tweens.add({ targets: t, alpha: 1, duration: 220 });
-    this.warnObjects = [t];
+    this.warnObjects.push(t); // 관찰 줄을 지우지 않는다 — 원인과 결과가 함께 보여야 한다
+  }
+
+  /** 예고 직전의 관찰 — "한 지점 체류 82%". 수치는 habits.ts의 evidence()가 만든 실측값 그대로다. */
+  private showObservationLine(line: string | null) {
+    this.clearWarning();
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2 - 34;
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    objs.push(this.add.text(cx, cy - 30, '관 찰', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#7a7a88', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    objs.push(this.add.text(cx, cy, line ?? '너의 움직임을 기록했다', {
+      fontFamily: 'monospace', fontSize: '24px', color: '#e8e8ec', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    this.warnObjects = objs;
     this.setHudDimmed(true);
   }
 
@@ -608,6 +633,8 @@ export class ArenaScene extends Phaser.Scene {
     this.warnDir = habitHasDirection(this.prediction) && this.lastHotspot
       ? directionFromHotspot(this.lastHotspot.x, this.lastHotspot.y, this.scale.width, this.scale.height)
       : null;
+    // 예고와 함께 보여줄 **원인**. habits.ts가 이미 만드는 근거 문자열을 그대로 쓴다(새로 만들지 않는다).
+    this.warnObservation = this.warnDir && this.prediction ? HABITS[this.prediction].evidence(reading) : null;
 
     this.prevMutation = this.activeMutation;
     clearMutation(this);
