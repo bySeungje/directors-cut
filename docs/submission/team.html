@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>DIRECTOR'S CUT — 팀 소개 및 역할 분담</title>
+<style>
+  :root {
+    --red: #a3132d;
+    --red-tint: #fbeced;
+    --ink: #1a1a1a;
+    --gray: #5a5a5a;
+    --line: #c9c9c9;
+    --line-dark: #9a9a9a;
+  }
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 18mm; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Apple SD Gothic Neo", sans-serif;
+    color: var(--ink);
+    font-size: 12.5px;
+    line-height: 1.65;
+    background: #fff;
+  }
+  h1, h2, h3 { font-family: "Apple SD Gothic Neo", sans-serif; font-weight: 700; margin: 0; }
+  p { margin: 0 0 8px; }
+
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .badge {
+    width: 30px; height: 30px; background: var(--red); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px; flex-shrink: 0;
+  }
+  h1 { font-size: 26px; letter-spacing: 0.3px; }
+  .doc-sub { font-size: 11px; color: var(--gray); margin: 0 0 16px 40px; }
+
+  .tagline {
+    border: 1.5px solid var(--red);
+    background: var(--red-tint);
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 16px;
+    break-inside: avoid;
+  }
+
+  section { margin-bottom: 16px; break-inside: avoid; }
+  h2 {
+    font-size: 14px;
+    color: var(--red);
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }
+  h3 { font-size: 12.5px; margin: 10px 0 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 6px 0; }
+  th, td { border: 1px solid var(--line-dark); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; font-weight: 700; }
+  .name { width: 18%; font-weight: 700; }
+  .role { width: 26%; }
+
+  .note { font-size: 11px; color: var(--gray); }
+  footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--gray); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">D</div>
+  <h1>DIRECTOR'S CUT</h1>
+</header>
+<p class="doc-sub">NAN 2026 사전과제 제출물 — 팀 소개 및 역할 분담</p>
+
+<div class="tagline">
+  만드는 사람과 판정하는 사람을 분리한다 — 구현자는 자기 결과물의 재미를 판정하지 못한다.
+</div>
+
+<section>
+  <h2>팀 구성</h2>
+  <table>
+    <thead>
+      <tr><th class="name">이름</th><th class="role">담당 영역</th><th>책임 범위</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="name">지승제<br><span class="note">팀대표</span></td>
+        <td class="role">AI 디렉터 설계 · 게임 엔진 · 개발 파이프라인</td>
+        <td>LLM과 결정론 엔진의 <b>권한 경계</b> 설계(좌표·판정은 엔진, 판단·목소리는 LLM),
+        코어 루프와 습관 판정 층 구현, 스펙 → 플랜 → 체크포인트 → 하네스 파이프라인 운영.
+        계약 동결·프록시 배포 등 되돌리기 어려운 결정의 최종 판단.</td>
+      </tr>
+      <tr>
+        <td class="name">유한결</td>
+        <td class="role">플레이 판정 · 게임 디자인 검증</td>
+        <td>실플레이로 <b>재미 여부를 판정하고 미달 지점을 완료 기준 항목으로 지목</b>합니다.
+        AI의 읽기가 실제로 "읽혔다"로 체감되는지, 예고·박탈·정산의 리듬이 성립하는지가 판정 대상입니다.
+        난이도 곡선과 변주·강화 카드의 밸런스 조정도 이 축에서 결정합니다.</td>
+      </tr>
+      <tr>
+        <td class="name">이해진</td>
+        <td class="role">산출물 · 데모 · 문서</td>
+        <td>플레이 영상, 발표 시나리오, 제출 문서를 맡습니다. 48시간 안에 만든 것을
+        <b>심사자가 30초 안에 이해하는 형태</b>로 바꾸는 자리이고, 구현이 마감과 경쟁하지 않도록
+        산출물 일정을 별도로 관리합니다.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>이렇게 나눈 이유</h2>
+  <p>
+    사전과제에서 확인한 가장 큰 병목은 <b>구현자가 자기 결과물을 판정하지 못한다</b>는 것이었습니다.
+    자동 테스트 191개와 브라우저 자동 판정(Playwright)으로 연출 순서와 인과까지 기계적으로 검증했지만,
+    <b>"재미있는가"는 끝내 기계가 판정하지 못했습니다.</b> 방향을 바로잡은 것은 매번 사람의 실플레이였고,
+    그 판정이 강화 대신 박탈, 물량 감축, 예측 타격 같은 설계 전환을 낳았습니다.
+    그래서 <b>판정을 구현과 분리</b>합니다.
+  </p>
+  <p>
+    또한 48시간 무박 대회에서는 만드는 것만큼 <b>전달하는 것</b>이 병목이 됩니다.
+    사전과제에서도 게임 외 산출물이 전체 일정의 상당 부분을 차지했고, 마감 직전에 구현과
+    산출물이 같은 시간을 놓고 경쟁했습니다. 산출물을 별도 담당으로 두어 그 경쟁을 구조적으로 없앱니다.
+  </p>
+</section>
+
+<section>
+  <h2>협업 방식</h2>
+  <table>
+    <tbody>
+      <tr><th class="name">코드</th><td>GitHub 단일 저장소. 모든 방향 변경은 스펙·플랜 문서를 먼저 고친 뒤 구현합니다(사전과제에서 검증된 절차).</td></tr>
+      <tr><th class="name">판정</th><td>구현자가 아닌 사람이 실플레이로 판정하고, 미달 항목을 완료 기준 대조로 지목합니다.</td></tr>
+      <tr><th class="name">기록</th><td>방향 전환에는 관찰·판정·다음 가설을 남깁니다. 사전과제에서 기록 없는 전환이 실패 원인이었던 경험을 반영한 규칙입니다.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>
+  사전과제 구현 내역과 AI 활용 방식은 별도 제출된 「AI 활용 기술 문서」에 수록.
+</footer>
+
+</body>
+</html>
