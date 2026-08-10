@@ -122,18 +122,53 @@ export const HABITS: Record<HabitId, HabitDef> = {
 /** 히스테리시스 계수 — 지표가 소수 2자리로 반올림돼 임계에 걸친 값이 행동 없이 뒤집힌다. */
 export const BROKEN_RATIO = 0.85;
 
+/** 서로 **포함관계인** 습관 묶음 — 이 안에서는 초과율 비교가 성립하지 않으므로 우선순위를 고정한다.
+ *  8×6 히트맵 셀은 사분면에 내포되므로 `anchor ≤ corner`가 항상 참이고, 초과율로 겨루면 ANCHOR가
+ *  원리적으로 못 이긴다(`docs/_hub/nodes/C-nested-grid-no-excess-compare.md`). */
+const NESTED_POSITIONAL: readonly HabitId[] = ['ANCHOR', 'CORNER'];
+/** 서로 독립인 축들 — 위치(대표 1개)·선회·미세회피·대시. 이들 사이에서는 초과율 비교가 성립한다. */
+const INDEPENDENT_AXES: readonly HabitId[] = ['ORBIT', 'MICRO', 'DASH'];
+
 /**
- * 지배적 습관 1개를 고른다. 초과율 비교가 아니라 **우선순위 고정**이다(위 ANCHOR 주석 참조).
+ * 지배적 습관 1개를 고른다.
+ *
+ * **2026-08-10 개정.** 구 구현은 `HABIT_IDS` 고정 순서에서 첫 번째를 골랐다. 위치 습관이 목록 앞에
+ * 있어서, 운동학 축(선회·미세회피)을 추가해도 위치 습관이 임계를 넘는 한 **영원히 선택되지 않았다** —
+ * 실측(Playwright 3웨이브 연속)에서 CORNER만 반복해 나왔다. 축만 늘리고 선택을 안 고치면 추가한 의미가 없다.
+ *
+ * 고친 방식은 두 층이다:
+ *  1. 포함관계인 위치 쌍(ANCHOR⊂CORNER)에서는 **우선순위 고정**으로 대표 1개를 뽑는다 — 이 둘 사이의
+ *     초과율 비교는 원리적으로 성립하지 않는다(C-nested-grid-no-excess-compare).
+ *  2. 그 대표와 독립 축들(선회·미세회피·대시) **사이에서는 초과율로 겨룬다** — 서로 내포되지 않으므로
+ *     "임계를 얼마나 크게 넘었나"가 의미를 갖는다. 동률이면 HABIT_IDS 순서로 결정론을 유지한다.
+ *
  * 아무것도 임계를 못 넘으면 null — 잘 움직이는 플레이어에게는 이게 정상이고 "읽을 게 없다"는 칭찬이다.
  *
  * 직전 라운드와 같은 습관은 피한다(변주·강화·봉인이 전부 2연속 금지인 것과 같은 규칙).
  * 단 그것 말고 넘긴 게 없으면 그대로 쓴다 — 억지로 다른 걸 고르면 임계 미달을 예측하게 된다.
  */
 export function detectHabit(r: HabitReading, prevHabit: HabitId | null = null): HabitId | null {
-  const over = HABIT_IDS.filter((id) => HABITS[id].read(r) >= HABITS[id].threshold);
-  if (over.length === 0) return null;
-  const fresh = over.filter((id) => id !== prevHabit);
-  return (fresh.length > 0 ? fresh : over)[0];
+  const isOver = (id: HabitId) => HABITS[id].read(r) >= HABITS[id].threshold;
+  const excess = (id: HabitId) => HABITS[id].read(r) / HABITS[id].threshold;
+
+  const positional = NESTED_POSITIONAL.filter(isOver);   // 순서 고정(초과율 비교 금지 구간)
+  const independent = INDEPENDENT_AXES.filter(isOver);
+  if (positional.length === 0 && independent.length === 0) return null;
+
+  // 2연속 금지는 **대표를 뽑기 전에** 적용한다 — 나중에 걸면 ANCHOR가 직전일 때
+  // 위치 그룹이 통째로 사라져 CORNER로 넘어갈 길이 막힌다.
+  const pick = (pos: readonly HabitId[], ind: readonly HabitId[]): HabitId | null => {
+    const rep = pos[0];                                  // 포함관계 내부는 앞선 것이 대표
+    const pool = [...(rep ? [rep] : []), ...ind];
+    if (pool.length === 0) return null;
+    // 독립 축들 사이에서만 초과율로 겨룬다. 동률이면 HABIT_IDS 순서(결정론 유지).
+    return [...pool].sort((a, b) => excess(b) - excess(a) || HABIT_IDS.indexOf(a) - HABIT_IDS.indexOf(b))[0];
+  };
+
+  return (
+    pick(positional.filter((id) => id !== prevHabit), independent.filter((id) => id !== prevHabit))
+    ?? pick(positional, independent)
+  );
 }
 
 /**

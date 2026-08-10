@@ -106,3 +106,39 @@ describe('meterFill', () => {
     }
   });
 });
+
+describe('지배 습관 선택 — 축이 늘어도 묻히지 않는다', () => {
+  const at2 = (over: Partial<HabitReading> = {}): HabitReading =>
+    ({ corner: 0, anchor: 0, dashUptime: 0, orbit: 0, orbitSign: 0, micro: 0, ...over });
+
+  it('위치 습관이 임계를 넘어도, 더 크게 넘긴 운동학 축이 이긴다', () => {
+    // 구 구현은 HABIT_IDS 순서로 CORNER를 무조건 골랐다 — 실측에서 3웨이브 연속 CORNER만 나왔다.
+    const r = at2({ corner: 0.49, orbit: 0.99, orbitSign: -1 }); // corner 초과율 1.02 vs orbit 1.38
+    expect(detectHabit(r)).toBe('ORBIT');
+  });
+
+  it('위치 습관이 더 크게 넘겼으면 위치가 이긴다', () => {
+    const r = at2({ corner: 0.95, orbit: 0.73, orbitSign: 1 }); // 1.98 vs 1.01
+    expect(detectHabit(r)).toBe('CORNER');
+  });
+
+  it('포함관계인 ANCHOR·CORNER 사이에서는 초과율로 겨루지 않는다 — ANCHOR가 대표다', () => {
+    // anchor ≤ corner가 항상 참이라 초과율 비교는 원리적으로 ANCHOR에게 불리하다
+    // (docs/_hub/nodes/C-nested-grid-no-excess-compare.md). 둘 다 넘기면 ANCHOR를 쓴다.
+    expect(detectHabit(at2({ anchor: 0.31, corner: 0.99 }))).toBe('ANCHOR');
+  });
+
+  it('미세 회피도 선택될 수 있다', () => {
+    expect(detectHabit(at2({ corner: 0.49, micro: 0.95 }))).toBe('MICRO');
+  });
+
+  it('직전과 같은 습관은 피하되, 그것뿐이면 그대로 쓴다', () => {
+    const r = at2({ corner: 0.99, orbit: 0.75, orbitSign: 1 });
+    expect(detectHabit(r, 'CORNER')).toBe('ORBIT');
+    expect(detectHabit(at2({ corner: 0.99 }), 'CORNER')).toBe('CORNER');
+  });
+
+  it('아무것도 임계를 못 넘으면 null — 읽을 게 없다는 정상 상태다', () => {
+    expect(detectHabit(at2({ corner: 0.2, orbit: 0.3, micro: 0.1 }))).toBe(null);
+  });
+});

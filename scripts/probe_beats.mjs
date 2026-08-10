@@ -20,6 +20,7 @@ import { chromium } from 'playwright';
 
 const URL = process.argv[2] ?? 'http://localhost:5202/directors-cut/';
 const RUN_MS = 75_000;
+const STYLE = process.env.PROBE_STYLE ?? 'anchor'; // anchor | orbit
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
@@ -84,8 +85,19 @@ await page.evaluate(() => {
 // ANCHOR/CORNER 습관을 만든다 — 예고가 걸리려면 위치 습관이 잡혀야 한다.
 const play = (async () => {
   const t0 = Date.now();
-  await page.keyboard.down('KeyA');
+  // anchor: 왼쪽에 눌러붙어 위치 습관을 만든다 / orbit: 반시계로 계속 돌아 선회 습관을 만든다
+  const ORBIT_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD']; // 반시계 순회
+  let oi = 0, held = null;
+  if (STYLE === 'anchor') await page.keyboard.down('KeyA');
   while (Date.now() - t0 < RUN_MS) {
+    if (STYLE === 'orbit') {
+      const want = ORBIT_KEYS[Math.floor((Date.now() - t0) / 900) % 4];
+      if (want !== held) {
+        if (held) await page.keyboard.up(held);
+        await page.keyboard.down(want);
+        held = want;
+      }
+    }
     const aim = await page.evaluate(() => {
       const s = window.__game.scene.getScene('ArenaScene');
       const cam = s.cameras.main;
@@ -111,7 +123,8 @@ const play = (async () => {
     }
     await page.waitForTimeout(40);
   }
-  await page.keyboard.up('KeyA');
+  if (STYLE === 'anchor') await page.keyboard.up('KeyA');
+  if (held) await page.keyboard.up(held);
 })();
 
 await Promise.race([play, page.waitForTimeout(RUN_MS + 2000)]);
