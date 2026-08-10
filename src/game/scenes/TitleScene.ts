@@ -33,7 +33,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 56, 'WASD 이동 · Space 대시 · 자동 사격', {
+      .text(width / 2, height / 2 + 56, 'WASD 이동 · 마우스 조준 · 클릭 사격 · Space 대시', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8',
       })
       .setOrigin(0.5);

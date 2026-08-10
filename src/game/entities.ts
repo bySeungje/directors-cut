@@ -169,19 +169,6 @@ export function generateTextures(scene: Phaser.Scene) {
 
 // ── 헬퍼 ────────────────────────────────────────────────────────────────
 
-function findNearestActiveEnemy(x: number, y: number, group: Phaser.Physics.Arcade.Group): Enemy | null {
-  let nearest: Enemy | null = null;
-  let nearestDistSq = Infinity;
-  const children = group.getChildren() as Enemy[];
-  for (const e of children) {
-    if (!e.active) continue;
-    const dx = e.x - x, dy = e.y - y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < nearestDistSq) { nearestDistSq = d2; nearest = e; }
-  }
-  return nearest;
-}
-
 /** multishot n발을 중심각 기준 ±12° 부채꼴로 배치(인접 탄 간격 12°, 재량 결정 — 브리프에 공식 없음). */
 function computeMultishotAngles(center: number, n: number): number[] {
   if (n <= 1) return [center];
@@ -254,16 +241,26 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return 1 - Phaser.Math.Clamp(remaining / this.stats.dashCooldownMs, 0, 1);
   }
 
-  /** 이동·대시·조준·깜빡임 처리 후, 이번 프레임에 발사할 각도 목록(라디안)을 반환 */
-  update(time: number, _delta: number, enemies: Phaser.Physics.Arcade.Group): number[] {
+  /** 이동·대시·조준·깜빡임 처리 후, 이번 프레임에 발사할 각도 목록(라디안)을 반환.
+   *
+   *  **조준·발사는 수동이다(2026-08-10).** 구 구현은 가장 가까운 적을 자동 조준하고 쿨다운마다
+   *  자동 발사했다 — 그래서 탄이 빗나갈 수 없었고, `docs/_hub/nodes/C-player-needs-a-failure-axis.md`가
+   *  종결한 대로 **플레이어가 부족해질 수 있는 축이 하나도 없었다**(방어는 이속 우위로, 공격은 자동
+   *  조준으로 둘 다 실패 불가). 예산 곡선·적 이속·선행 조준을 세 번 당겼지만 전부 "적을 강하게" 축이라
+   *  실패했다. 이 5줄이 그 원인을 제거한다.
+   *
+   *  적을 인자로 더 이상 보지 않는다 — 조준은 포인터가, 발사는 플레이어가 정한다. 빈 곳을 쏠 수 있고
+   *  그것이 곧 실패 축이다(`sc-miss-possible`: 명중률 100% 미만이 실측으로 확인돼야 한다). */
+  update(time: number, _delta: number, _enemies: Phaser.Physics.Arcade.Group): number[] {
     this.handleMovement(time);
     this.handleDash(time);
     this.handleBlink(time);
 
-    const nearest = findNearestActiveEnemy(this.x, this.y, enemies);
-    if (nearest) this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, nearest.x, nearest.y));
+    const pointer = this.scene.input.activePointer;
+    this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, pointer.worldX, pointer.worldY));
 
-    if (!nearest || time - this.lastFireAt < this.stats.fireRateMs) return [];
+    // 홀드 연사 — 간격은 기존 fireRateMs를 그대로 쓴다(업그레이드 카드 목록·계약 불변, req-manual-fire).
+    if (!pointer.isDown || time - this.lastFireAt < this.stats.fireRateMs) return [];
     this.lastFireAt = time;
     return computeMultishotAngles(this.rotation, this.stats.multishot);
   }

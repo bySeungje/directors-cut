@@ -193,7 +193,10 @@ export class ArenaScene extends Phaser.Scene {
     );
 
     const fireAngles = this.player.update(time, delta, this.enemies);
-    if (fireAngles.length > 0) playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
+    if (fireAngles.length > 0) {
+      playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
+      this.telemetry.recordManualAttack(); // 수동 발사 횟수 — 디렉터가 "쏘는 쪽인가 피하는 쪽인가"를 읽는 입력
+    }
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     const enemyList = this.enemies.getChildren() as Enemy[];
