@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
+import { shouldFire } from './fireRule';
 import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
@@ -259,8 +260,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const pointer = this.scene.input.activePointer;
     this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, pointer.worldX, pointer.worldY));
 
-    // 홀드 연사 — 간격은 기존 fireRateMs를 그대로 쓴다(업그레이드 카드 목록·계약 불변, req-manual-fire).
-    if (!pointer.isDown || time - this.lastFireAt < this.stats.fireRateMs) return [];
+    if (!shouldFire(pointer.isDown, time, this.lastFireAt, this.stats.fireRateMs)) return [];
     this.lastFireAt = time;
     return computeMultishotAngles(this.rotation, this.stats.multishot);
   }
