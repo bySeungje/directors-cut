@@ -5,6 +5,7 @@ import {
   type WarnDirection,
 } from '../src/game/warning';
 import { MUTATIONS, BUFF_CARDS, SPAWN_PATTERNS, type Directive } from '../src/contracts/directive';
+import { dominantEscape, escapeIndexOf, predictedPoint, strikeHits } from '../src/game/prediction';
 
 const base: Directive = {
   composition: [
@@ -137,5 +138,51 @@ describe('표적 대응 — 물량이 아니라 읽은 대로 갚는다', () => 
 
   it('kind가 없으면 디렉티브를 건드리지 않는다', () => {
     expect(sanitizeDirectiveForWarning(base, 'W', null)).toEqual(base);
+  });
+});
+
+describe('예측 타격 — 랜덤이 흉내 낼 수 없는 유일한 증거', () => {
+  it('데이터가 부족하면 발동하지 않는다 — 없는 습관을 지어내지 않는다', () => {
+    expect(dominantEscape([0, 0, 0, 0, 0, 0, 0, 0])).toBe(null);
+    expect(dominantEscape([1, 0, 0, 0, 0, 0, 0, 0])).toBe(null); // 누적 2.5초 미만
+  });
+
+  it('골고루 튀는 플레이어에게는 발동하지 않는다 — 읽을 게 없는 것도 정직한 결과다', () => {
+    expect(dominantEscape([2, 2, 2, 2, 2, 2, 2, 2])).toBe(null); // 균등 12.5%
+  });
+
+  it('한 방향으로 치우치면 그 방향을 집는다', () => {
+    const d = dominantEscape([9, 1, 1, 1, 1, 1, 1, 1]);
+    expect(d?.index).toBe(0);
+    expect(d!.share).toBeGreaterThan(0.28);
+  });
+
+  it('속도 벡터를 8방위로 바꾼다 — 정지는 null', () => {
+    expect(escapeIndexOf(100, 0)).toBe(0);   // 오른쪽
+    expect(escapeIndexOf(0, 100)).toBe(2);   // 아래
+    expect(escapeIndexOf(-100, 0)).toBe(4);  // 왼쪽
+    expect(escapeIndexOf(0, 0)).toBe(null);
+  });
+
+  it('예측 지점은 아레나 밖으로 나가지 않는다', () => {
+    for (let i = 0; i < 8; i++) {
+      const p2 = predictedPoint(20, 20, i, 960, 640);
+      expect(p2.x).toBeGreaterThanOrEqual(0);
+      expect(p2.y).toBeGreaterThanOrEqual(0);
+      expect(p2.x).toBeLessThanOrEqual(960);
+      expect(p2.y).toBeLessThanOrEqual(640);
+    }
+  });
+
+  it('반사를 거스르면 빗나간다 — 플레이어가 직접 반증할 수 있어야 한다', () => {
+    expect(strikeHits(100, 100, 100, 100)).toBe(true);
+    expect(strikeHits(100, 100, 400, 100)).toBe(false);
+  });
+
+  it('예측은 현재 속도가 아니라 누적 습관을 쓴다 — 정지 상태에서도 성립한다', () => {
+    // escapeIndexOf(0,0)이 null이어도 dominantEscape는 누적 bins로 방향을 낸다.
+    // 즉 멈춰 있어도 "너는 오른쪽으로 튄다"를 예고할 수 있다 — 선행 조준(물리)과 다른 점이다.
+    expect(escapeIndexOf(0, 0)).toBe(null);
+    expect(dominantEscape([9, 1, 1, 1, 1, 1, 1, 1])?.index).toBe(0);
   });
 });

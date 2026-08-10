@@ -11,6 +11,10 @@ import {
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
 import { canDamageEnforcer, enforcerPosition, CLOSE_RANGE_PX } from '../enforcerRule';
+import {
+  escapeIndexOf, dominantEscape, predictedPoint, strikeHits, ESCAPE_WORD,
+  TELEGRAPH_MS, STRIKE_RADIUS_PX,
+} from '../prediction';
 import { runDirective } from '../waveRunner';
 import { nextMultiplier, killGain, chooseDeprivation, DEPRIVATION_WORD, MULT_START } from '../settlement';
 import { browserStore, saveRun, loadRuns, recallLine, type RunRecord } from '../memory';
@@ -46,6 +50,11 @@ const LOSE_TRANSITION_DELAY_MS = 500;
 const STAMP_HOLD_MS = 1300;
 /** 기억용 격자 — 텔레메트리 히트맵과 같은 8×6이라 "바로 여기"의 해상도가 사람 감각과 맞는다. */
 const MEM_COLS = 8, MEM_ROWS = 6;
+
+/** 이 거리 안에 적이 있을 때의 이동만 "도망"으로 센다. 한가할 때의 이동은 습관이 아니다. */
+const THREAT_RADIUS_PX = 260;
+/** 예측 타격 간격(ms). 잦으면 잔소리가 되고 드물면 우연으로 읽힌다. */
+const STRIKE_INTERVAL_MS = 7000;
 
 /** 관찰(원인)이 뜨고 예고(결과)가 붙기까지. */
 const OBSERVATION_TO_WARN_MS = 1200;
@@ -96,6 +105,10 @@ export class ArenaScene extends Phaser.Scene {
   private firstObservationDone = false;
   /** 이번 웨이브에서 실시간 지목을 이미 띄웠는가 — 웨이브당 1회로 제한한다(도배 금지). */
   private calloutDone = false;
+  /** 위협받을 때 튄 방향의 누적 시간(8방위). 예측 타격의 유일한 입력이다. */
+  private escapeBins = new Array(8).fill(0) as number[];
+  private strikeReadyAt = 0;
+  private strikeActive = false;
   /** 예고한 자리에 선 집행자. 일반 적 그룹 밖이라 웨이브 클리어 조건에 끼지 않는다. */
   private enforcer: Enforcer | null = null;
   private enforcerRing!: Phaser.GameObjects.Graphics;
@@ -211,6 +224,9 @@ export class ArenaScene extends Phaser.Scene {
     this.markerObjects = [];
     this.firstObservationDone = false;
     this.calloutDone = false;
+    this.escapeBins = new Array(8).fill(0);
+    this.strikeReadyAt = 0;
+    this.strikeActive = false;
     this.enforcer = null;
 
     this.createHud();
@@ -259,6 +275,8 @@ export class ArenaScene extends Phaser.Scene {
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     this.updateEnforcer(time);
+    this.trackEscape(dt);
+    this.maybePredictiveStrike(time);
     this.maybeCallout();
     this.maybeFirstObservation();
 
@@ -272,6 +290,75 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
 
     this.updateHud();
+  }
+
+  /** 위협받는 동안 어느 쪽으로 튀는지 누적한다 — 예측 타격의 유일한 입력.
+   *  가까운 적이 없으면 세지 않는다. 한가할 때의 이동은 도망이 아니라 그냥 이동이다. */
+  private trackEscape(dt: number) {
+    const enemies = this.enemies.getChildren() as Enemy[];
+    let nearest = Infinity;
+    for (const e of enemies) {
+      if (!e.active) continue;
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.x, e.y);
+      if (d < nearest) nearest = d;
+    }
+    if (nearest > THREAT_RADIUS_PX) return;
+    const v = this.player.body.velocity;
+    const i = escapeIndexOf(v.x, v.y);
+    if (i !== null) this.escapeBins[i] += dt;
+  }
+
+  /**
+   * **예측 타격** — 랜덤이 흉내 낼 수 없는 유일한 증거.
+   *
+   * 능력을 뺏거나 지형을 방해하는 것은 플레이 로그를 몰라도 무작위로 할 수 있다. 플레이어는 구분하지
+   * 못하고, 그러면 AI의 읽기는 주장일 뿐 증거가 아니다. 랜덤이 못 하는 일은 하나뿐이다 —
+   * **아직 가지 않은 자리를 맞히는 것.**
+   *
+   * 누적된 도망 방향으로 미리 표적을 찍고 1초 뒤 터뜨린다. 하던 대로 튀면 맞고, 반사를 거스르면 빗나간다.
+   * 플레이어가 일부러 다른 쪽으로 움직여 **직접 반증할 수 있다**는 것이 이 설계의 핵심이다.
+   */
+  private maybePredictiveStrike(time: number) {
+    if (this.strikeActive || this.playerDead || !this.enemiesSpawned) return;
+    if (time < this.strikeReadyAt) return;
+    const dom = dominantEscape(this.escapeBins);
+    if (!dom) return; // 골고루 튀는 플레이어에게는 발동하지 않는다 — 없는 습관을 지어내지 않는다
+
+    this.strikeActive = true;
+    this.strikeReadyAt = time + STRIKE_INTERVAL_MS;
+    const t = predictedPoint(this.player.x, this.player.y, dom.index, this.scale.width, this.scale.height);
+
+    const ring = this.add.graphics().setDepth(-40);
+    ring.lineStyle(2, 0xff2d2d, 0.9);
+    ring.strokeCircle(t.x, t.y, STRIKE_RADIUS_PX);
+    const label = this.add.text(t.x, t.y - STRIKE_RADIUS_PX - 16,
+      `너는 ${ESCAPE_WORD[dom.index]}으로 튄다`, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#ff2d2d', fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(HUD_DEPTH + 45);
+    this.tweens.add({ targets: ring, alpha: { from: 0.35, to: 1 }, duration: TELEGRAPH_MS / 2, yoyo: true });
+
+    this.time.delayedCall(TELEGRAPH_MS, () => {
+      ring.destroy(); label.destroy();
+      this.strikeActive = false;
+      if (this.playerDead || this.runEnded) return;
+      const hit = strikeHits(this.player.x, this.player.y, t.x, t.y);
+      const burst = this.add.graphics().setDepth(-40);
+      burst.fillStyle(0xff2d2d, hit ? 0.45 : 0.18);
+      burst.fillCircle(t.x, t.y, STRIKE_RADIUS_PX);
+      this.tweens.add({ targets: burst, alpha: 0, duration: 420, onComplete: () => burst.destroy() });
+
+      if (hit) {
+        this.applyDamageToPlayer();
+        if (this.player.hp <= 0) this.handlePlayerDeath();
+      } else {
+        this.multiplier = Math.min(5, this.multiplier + 0.2);
+      }
+      const msg = this.add.text(t.x, t.y, hit ? '예측대로다' : '빗나갔다', {
+        fontFamily: 'monospace', fontSize: '18px',
+        color: hit ? '#ff2d2d' : '#e8e8ec', fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(HUD_DEPTH + 50);
+      this.tweens.add({ targets: msg, y: t.y - 34, alpha: 0, duration: 900, onComplete: () => msg.destroy() });
+    });
   }
 
   /** **실시간 지목** — 예고한 습관이 임계를 넘는 그 순간, 플레이어 옆에서 짚는다.
