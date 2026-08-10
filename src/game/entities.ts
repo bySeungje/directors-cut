@@ -235,6 +235,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (healedBy > 0) this.hp = Math.min(this.stats.maxHp, this.hp + healedBy);
   }
 
+  /** 디렉터가 예고를 적중시킨 다음 웨이브 동안 참 — 대시를 쓸 수 없다.
+   *  강화가 아니라 박탈이 이 게임의 대응 방식이다(settlement.ts 참조). */
+  dashLocked = false;
+
   /** 0(직후)~1(사용 가능) — HUD 게이지용 */
   dashReadyFraction(time: number): number {
     if (time >= this.dashReadyAt) return 1;
@@ -277,6 +281,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleDash(time: number) {
+    if (this.dashLocked) return; // 읽혔다 — 이번 웨이브는 대시를 잃는다(settlement.deprivationFor)
     if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) && time >= this.dashReadyAt) {
       this.dashReadyAt = time + this.stats.dashCooldownMs;
       this.dashActiveUntil = time + DASH_DURATION_MS;

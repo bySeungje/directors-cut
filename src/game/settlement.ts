@@ -34,6 +34,25 @@ export function nextMultiplier(current: number, verdict: Verdict): number {
   return Math.min(MULT_MAX, Math.max(MULT_MIN, current + delta));
 }
 
+/**
+ * 판정이 **무엇을 가져가는가.**
+ *
+ * 이 게임의 대응은 강화가 아니라 **박탈**이다. "다음 편대는 더 단단해진다"는 플레이어의 결정을 하나도
+ * 바꾸지 않는다 — 하던 걸 그대로 하면 되고 다만 오래 걸릴 뿐이라, 물량을 늘리는 것과 같은 시간 축내기다.
+ * 읽혔으면 **기대던 것을 잃어야** 다음 판의 선택이 달라진다.
+ *
+ * 대시를 고른 이유: (1) 플레이어가 가장 많이 기대는 탈출 수단이고 (2) **변주가 아니라 플레이어 상태**라
+ * 습관 판정을 무효로 만들지 않는다. 용암·안개 같은 변주로 박탈하면 그 변주가 판정 지표를 강제해
+ * 판정이 VOID가 되고, 배수가 영원히 멈춘다(`docs/_hub/nodes/C-mutation-judge-collision.md`).
+ *
+ * 예고를 깨면 잃지 않는다 — 그래서 "AI를 읽는 것"이 취향이 아니라 **내 능력을 지키는 일**이 된다.
+ */
+export type Deprivation = 'DASH_LOCK' | null;
+
+export function deprivationFor(verdict: Verdict): Deprivation {
+  return verdict === 'HIT' ? 'DASH_LOCK' : null;
+}
+
 /** 처치 1기가 더하는 점수. */
 export function killGain(multiplier: number): number {
   return Math.round(KILL_SCORE * multiplier);

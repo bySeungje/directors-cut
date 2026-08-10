@@ -69,7 +69,7 @@ function adaptToPlayerStyle(base: Directive, log: WaveLog | undefined, prevMutat
       ...base,
       buff: 'TOUGH',
       deny: 'DAMAGE_UP',
-      taunt: '너는 쏘는 쪽을 택했다. 다음 편대는 더 단단하다.',
+      taunt: '너는 쏘는 쪽을 택했다. 그 손을 묶겠다.',
       intent: `${base.intent} + 공격 성향 대응`,
     };
   }

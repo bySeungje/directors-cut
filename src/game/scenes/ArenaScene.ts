@@ -11,7 +11,7 @@ import {
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
 import { runDirective } from '../waveRunner';
-import { nextMultiplier, killGain, MULT_START } from '../settlement';
+import { nextMultiplier, killGain, deprivationFor, MULT_START } from '../settlement';
 import { browserStore, saveRun, loadRuns, recallLine, type RunRecord } from '../memory';
 import {
   directionFromHotspot, directionAheadOfOrbit, warnKindFor, warnLine,
@@ -639,6 +639,8 @@ export class ArenaScene extends Phaser.Scene {
     else if (verdict === 'BROKEN') this.score.player++;
     // 배수는 실력이 아니라 **읽기**에 붙는다. 잘 쏴서 오르지 않는다.
     this.multiplier = nextMultiplier(this.multiplier, verdict);
+    // 박탈 — 읽혔으면 기대던 것을 잃는다. 강화(더 단단한 적)는 결정을 바꾸지 않고 시간만 늘린다.
+    this.player.dashLocked = deprivationFor(verdict) === 'DASH_LOCK';
     this.brokePrediction = verdict === 'BROKEN';
     this.prediction = null;
     return { habit, verdict };
@@ -835,6 +837,13 @@ export class ArenaScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '18px',
       color: verdict === 'BROKEN' ? '#ff2d2d' : '#7a7a88', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    // 박탈/보전 — 이 판정이 무엇을 가져갔는가. 강화가 아니라 박탈이라 다음 판의 선택이 실제로 달라진다.
+    if (verdict !== 'VOID') {
+      add(this.add.text(cx, cy + 126, hit ? '대시를 가져간다' : '대시를 지켰다', {
+        fontFamily: 'monospace', fontSize: '16px',
+        color: hit ? '#ff2d2d' : '#e8e8ec', fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    }
 
     this.stampObjects = objs;
   }
@@ -909,8 +918,15 @@ export class ArenaScene extends Phaser.Scene {
     const x = 16, y = 62, w = 100, h = 6;
     this.dashGauge.clear();
     this.dashGauge.fillStyle(0x2a2a33, 1).fillRect(x, y, w, h);
-    const frac = this.player.dashReadyFraction(this.time.now);
-    this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
+    if (this.player.dashLocked) {
+      // 봉인 — 게이지를 레드로 채우고 사선을 그어 "쓸 수 없다"를 형태로 보여준다.
+      this.dashGauge.fillStyle(0x5a1a1a, 1).fillRect(x, y, w, h);
+      this.dashGauge.lineStyle(2, 0xff2d2d, 1);
+      this.dashGauge.lineBetween(x, y + h, x + w, y);
+    } else {
+      const frac = this.player.dashReadyFraction(this.time.now);
+      this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
+    }
 
     this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
     this.updatePredictionMeter();
