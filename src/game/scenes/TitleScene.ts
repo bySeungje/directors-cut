@@ -25,23 +25,16 @@ export class TitleScene extends Phaser.Scene {
 
     warmUpDirector(); // 프록시·모델 콜드스타트를 미리 데운다(스펙 3.4 amendment) — 결과를 기다리지 않고 게임 시작을 막지 않음
 
-    this.renderStageMarks(width, height);
-    this.renderTitleWithCutmark(width, height / 2 - 82);
+    this.renderTitleWithCutmark(width, height / 2 - 50);
     this.renderDirectorBadge();
 
     this.add
-      .text(width / 2, height / 2 - 10, 'AI 감옥장이 은신 습관을 학습해 다음 감시망을 재설계하는 탈출 액션', {
-        fontFamily: 'monospace', fontSize: '18px', color: '#ff2d2d',
-      })
+      .text(width / 2, height / 2 + 16, '클릭해서 시작', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec' })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height / 2 + 48, '클릭해서 SECTOR 01 탈출', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec', fontStyle: 'bold' })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, height / 2 + 92, 'WASD 이동 · Space 대시 · E/J 수동 교란 · 출구 도달\n공격, 회피, 대시, 같은 루트 반복까지 DIRECTOR가 다음 구역 설계에 반영한다.', {
-        fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
+      .text(width / 2, height / 2 + 56, 'WASD 이동 · Space 대시 · 자동 사격', {
+        fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8',
       })
       .setOrigin(0.5);
 
@@ -54,7 +47,7 @@ export class TitleScene extends Phaser.Scene {
   /** "DIRECTOR'S CUT"을 "DIRECTOR'S "+"CUT" 두 Text로 나눠 붙여 그린다 — "CUT" 파트의 실제 렌더 폭을
    *  알아야 그 위를 정확히 긋는 레드 컷 마크(시안 SCREEN 01 문법)를 그릴 수 있기 때문. */
   private renderTitleWithCutmark(width: number, titleY: number) {
-    const style = { fontFamily: 'monospace', fontSize: '46px', color: '#e8e8ec', fontStyle: 'bold' } as const;
+    const style = { fontFamily: 'monospace', fontSize: '40px', color: '#e8e8ec' } as const;
     const prefix = this.add.text(0, titleY, "DIRECTOR'S ", style).setOrigin(0, 0.5);
     const cut = this.add.text(0, titleY, 'CUT', style).setOrigin(0, 0.5);
 
@@ -69,26 +62,6 @@ export class TitleScene extends Phaser.Scene {
     const y2 = y1 + (x2 - x1) * CUTMARK_TILT_RATIO;
 
     this.add.graphics().lineStyle(CUTMARK_WIDTH, CUTMARK_COLOR, 1).lineBetween(x1, y1, x2, y2);
-  }
-
-  private renderStageMarks(width: number, height: number) {
-    const g = this.add.graphics();
-    g.lineStyle(1, 0x23232e, 1).strokeRect(76, 82, width - 152, height - 164);
-    g.lineStyle(2, CUTMARK_COLOR, 0.85);
-    g.lineBetween(76, 82, 128, 82);
-    g.lineBetween(76, 82, 76, 134);
-    g.lineBetween(width - 76, 82, width - 128, 82);
-    g.lineBetween(width - 76, 82, width - 76, 134);
-    g.lineBetween(76, height - 82, 128, height - 82);
-    g.lineBetween(76, height - 82, 76, height - 134);
-    g.lineBetween(width - 76, height - 82, width - 128, height - 82);
-    g.lineBetween(width - 76, height - 82, width - 76, height - 134);
-
-    this.add
-      .text(width / 2, 112, 'AI PRISON / BLOCK A / NO SAFE ROUTE', {
-        fontFamily: 'monospace', fontSize: '12px', color: '#7a7a88', letterSpacing: 2,
-      })
-      .setOrigin(0.5);
   }
 
   /** 좌상단 레드 D 뱃지 + "NAN 2026" 라벨 — 시안 SCREEN 01, 인터벌/엔드 화면과 같은 디렉터 아이덴티티. */

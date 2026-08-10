@@ -2,13 +2,13 @@ import { Directive, Mutation, WaveLog } from '../contracts/directive';
 import { fillToBudgetFloor } from './validator';
 
 export const OPENING_WAVE: Directive = {
-  // 맵 기반 전환 후 첫 구역은 시작 감방을 즉시 비추지 않고, 바깥 복도에서 들어오는 순찰 리듬을 읽게 한다.
+  // 첫 웨이브는 한 방면에서만 들어온다 — 플레이어가 움직임 습관을 만들 여지를 주고, 그것을 읽는다.
   composition: [{ type: 'chaser', count: 8, spawn: 'E', elite: false }],
   mutation: 'NONE',
   buff: 'NONE',
   deny: 'NONE',
-  taunt: '수감자 734, 탈출 시도 확인. 지금부터 당신을 관찰한다.',
-  intent: '수감동 이탈: 기본 조작 관찰',
+  taunt: '지금부터 너를 관찰한다.',
+  intent: '기준선 수집: 이동 습관 관찰',
 };
 
 // export 심볼은 OPENING_WAVE 하나로 통일한다 (별칭 export 금지)
@@ -21,7 +21,7 @@ const BANK: Record<number, Directive[]> = {
   3: [
     { composition: [{ type: 'chaser', count: 7, spawn: 'N', elite: false }, { type: 'shooter', count: 4, spawn: 'S', elite: false }], mutation: 'LAVA_LEFT', buff: 'NONE', deny: 'NONE', taunt: '왼쪽은 이제 내 구역이다.', intent: '공간 압박' },
     { composition: [{ type: 'splitter', count: 7, spawn: 'PINCER', elite: false }], mutation: 'SPEED_SURGE', buff: 'NONE', deny: 'NONE', taunt: '속도를 올려보지.', intent: '릴레이 순찰 템포 상승' },
-    { composition: [{ type: 'chaser', count: 3, spawn: 'RING', elite: true }], mutation: 'SPAWN_STORM', buff: 'NONE', deny: 'NONE', taunt: '정예를 보낸다. 영광으로 알아라.', intent: '엘리트 경비 도입' },
+    { composition: [{ type: 'chaser', count: 3, spawn: 'RING', elite: true }], mutation: 'SPAWN_STORM', buff: 'NONE', deny: 'NONE', taunt: '정예를 보낸다. 영광으로 알아라.', intent: '엘리트 도입' },
   ],
   4: [
     { composition: [{ type: 'shooter', count: 5, spawn: 'RING', elite: false }, { type: 'chaser', count: 6, spawn: 'BEHIND', elite: false }], mutation: 'SHRINK_ARENA', buff: 'NONE', deny: 'NONE', taunt: '보안 구역을 압축한다. 도망칠 곳도 줄어든다.', intent: '공간 축소 압박' },
@@ -69,7 +69,7 @@ function adaptToPlayerStyle(base: Directive, log: WaveLog | undefined, prevMutat
       ...base,
       buff: 'TOUGH',
       deny: 'DAMAGE_UP',
-      taunt: '교란 소음 확인. 다음 구역 경비 장갑을 보강한다.',
+      taunt: '너는 쏘는 쪽을 택했다. 다음 편대는 더 단단하다.',
       intent: `${base.intent} + 공격 성향 대응`,
     };
   }

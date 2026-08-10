@@ -7,9 +7,8 @@ import {
   type HabitReading, type Verdict,
 } from '../habits';
 import {
-  Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures, preloadEntityTextures,
+  Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures,
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
-  type EnemyBehaviorContext,
 } from '../entities';
 import { runDirective } from '../waveRunner';
 import { clearMutation, updateMutation } from '../mutations';
@@ -38,293 +37,6 @@ const WIN_TRANSITION_DELAY_MS = 600;
 const LOSE_TRANSITION_DELAY_MS = 500;
 /** 정산 표시를 읽을 시간. 기존 waveClearSlowmo(500ms)보다 길게 잡아 슬로모가 끝난 뒤에도 잠시 남는다. */
 const STAMP_HOLD_MS = 1300;
-const RULE_BANNER_MS = 1250;
-const SPOTLIGHT_HOLD_SEC = 8;
-const STAGE_DAMAGE_DPS = 0.85;
-const DETECTION_BUILD_PER_SEC = 0.56;
-const DETECTION_DECAY_PER_SEC = 0.38;
-const SENSOR_DETECTION_BUILD_PER_SEC = 0.42;
-const NETWORK_ALERT_MS = 1650;
-const NOISE_ALERT_MS = 1150;
-const WAVE_ENTRY_GRACE_MS = 1400;
-const SUSPICION_DECAY_PER_SEC = 0.32;
-const SUSPICION_SEARCH_THRESHOLD = 0.34;
-const SUSPICION_ALERT_THRESHOLD = 0.86;
-const INVESTIGATION_HOLD_MS = 2400;
-const BODY_DISCOVERY_RANGE = 190;
-const CAMERA_FRAME_MARGIN_X = 120;
-const CAMERA_FRAME_MARGIN_Y = 82;
-const PRIORITY_TARGET_COUNT = 3;
-const EXIT_ZONE_RADIUS = 26;
-const WALL_HEIGHT = 14;
-const PATROL_DETOUR_MARGIN = 46;
-
-type StageRule = 'NONE' | 'SEARCHLIGHT' | 'SURVEILLANCE_FRAME' | 'PRIORITY_TARGETS' | 'HOTSPOT_LOCKDOWN' | 'FINAL_CORE';
-
-interface SectorStory {
-  title: string;
-  objective: string;
-  directorLine: string;
-  rule: StageRule;
-}
-
-interface WallSpec { x: number; y: number; w: number; h: number }
-interface SectorLayout {
-  start: { x: number; y: number };
-  exit: { x: number; y: number };
-  walls: WallSpec[];
-  patrols: { x: number; y: number }[][];
-}
-
-type PropKind = 'cell' | 'searchlight' | 'camera' | 'relay' | 'scorch' | 'compressor' | 'server' | 'vent' | 'pipe' | 'doorPanel' | 'rack' | 'crate' | 'forklift' | 'checkpoint';
-interface PropSpec { kind: PropKind; x: number; y: number; w?: number; h?: number; r?: number }
-interface SecuritySensor {
-  type: 'cctv' | 'relay';
-  x: number;
-  y: number;
-  angle: number;
-  range: number;
-  fov: number;
-  sweep: number;
-  speed: number;
-  color: number;
-}
-type SecurityMood = 'clear' | 'suspicious' | 'searching' | 'alert';
-type SecuritySpotter = Enemy | SecuritySensor;
-
-const SECTOR_LAYOUTS: Record<number, SectorLayout> = {
-  1: {
-    start: { x: 92, y: 548 },
-    exit: { x: 858, y: 92 },
-    walls: [
-      { x: 270, y: 420, w: 260, h: 28 },
-      { x: 565, y: 250, w: 28, h: 260 },
-      { x: 720, y: 390, w: 240, h: 28 },
-    ],
-    patrols: [
-      [{ x: 255, y: 505 }, { x: 410, y: 505 }, { x: 410, y: 350 }],
-      [{ x: 625, y: 112 }, { x: 835, y: 112 }, { x: 835, y: 325 }],
-      [{ x: 230, y: 145 }, { x: 445, y: 145 }, { x: 445, y: 310 }],
-    ],
-  },
-  2: {
-    start: { x: 92, y: 92 },
-    exit: { x: 866, y: 540 },
-    walls: [
-      { x: 260, y: 220, w: 28, h: 250 },
-      { x: 454, y: 398, w: 260, h: 28 },
-      { x: 688, y: 212, w: 28, h: 250 },
-    ],
-    patrols: [
-      [{ x: 126, y: 126 }, { x: 212, y: 480 }],
-      [{ x: 344, y: 120 }, { x: 610, y: 120 }, { x: 610, y: 330 }],
-      [{ x: 760, y: 180 }, { x: 842, y: 502 }],
-    ],
-  },
-  3: {
-    start: { x: 92, y: 548 },
-    exit: { x: 864, y: 544 },
-    walls: [
-      { x: 248, y: 324, w: 28, h: 360 },
-      { x: 456, y: 154, w: 310, h: 28 },
-      { x: 672, y: 386, w: 28, h: 300 },
-      { x: 730, y: 270, w: 240, h: 28 },
-    ],
-    patrols: [
-      [{ x: 120, y: 520 }, { x: 188, y: 146 }],
-      [{ x: 338, y: 238 }, { x: 602, y: 238 }],
-      [{ x: 760, y: 390 }, { x: 860, y: 530 }],
-    ],
-  },
-  4: {
-    start: { x: 480, y: 548 },
-    exit: { x: 480, y: 76 },
-    walls: [
-      { x: 206, y: 250, w: 280, h: 28 },
-      { x: 754, y: 250, w: 280, h: 28 },
-      { x: 320, y: 420, w: 28, h: 190 },
-      { x: 640, y: 420, w: 28, h: 190 },
-    ],
-    patrols: [
-      [{ x: 480, y: 506 }, { x: 480, y: 332 }, { x: 222, y: 332 }],
-      [{ x: 480, y: 506 }, { x: 480, y: 332 }, { x: 738, y: 332 }],
-      [{ x: 212, y: 110 }, { x: 748, y: 110 }],
-    ],
-  },
-  5: {
-    start: { x: 92, y: 322 },
-    exit: { x: 868, y: 320 },
-    walls: [
-      { x: 284, y: 142, w: 28, h: 230 },
-      { x: 284, y: 506, w: 28, h: 190 },
-      { x: 508, y: 322, w: 300, h: 28 },
-      { x: 718, y: 142, w: 28, h: 230 },
-      { x: 718, y: 506, w: 28, h: 190 },
-    ],
-    patrols: [
-      [{ x: 122, y: 322 }, { x: 238, y: 322 }],
-      [{ x: 376, y: 154 }, { x: 640, y: 154 }],
-      [{ x: 376, y: 502 }, { x: 640, y: 502 }],
-      [{ x: 774, y: 322 }, { x: 868, y: 322 }],
-    ],
-  },
-  6: {
-    start: { x: 92, y: 548 },
-    exit: { x: 862, y: 88 },
-    walls: [
-      { x: 202, y: 320, w: 28, h: 430 },
-      { x: 394, y: 112, w: 300, h: 28 },
-      { x: 422, y: 438, w: 28, h: 260 },
-      { x: 632, y: 292, w: 300, h: 28 },
-      { x: 776, y: 458, w: 28, h: 210 },
-    ],
-    patrols: [
-      [{ x: 102, y: 548 }, { x: 154, y: 112 }],
-      [{ x: 280, y: 214 }, { x: 552, y: 214 }],
-      [{ x: 504, y: 514 }, { x: 704, y: 514 }],
-      [{ x: 838, y: 120 }, { x: 838, y: 398 }],
-    ],
-  },
-  7: {
-    start: { x: 480, y: 560 },
-    exit: { x: 480, y: 76 },
-    walls: [
-      { x: 204, y: 232, w: 260, h: 28 },
-      { x: 756, y: 232, w: 260, h: 28 },
-      { x: 204, y: 426, w: 260, h: 28 },
-      { x: 756, y: 426, w: 260, h: 28 },
-      { x: 480, y: 322, w: 30, h: 290 },
-    ],
-    patrols: [
-      [{ x: 480, y: 552 }, { x: 306, y: 516 }, { x: 306, y: 326 }],
-      [{ x: 480, y: 552 }, { x: 654, y: 516 }, { x: 654, y: 326 }],
-      [{ x: 306, y: 136 }, { x: 654, y: 136 }],
-      [{ x: 142, y: 326 }, { x: 818, y: 326 }],
-    ],
-  },
-};
-
-const SECTOR_STORIES: Record<number, SectorStory> = {
-  1: {
-    title: 'BLOCK 01 · 물류 수감동',
-    objective: '철제 선반과 격리 컨테이너 사이로 첫 보안문까지 이동',
-    directorLine: '수감자 734, 물류 수감동 출입 기록을 잠근다.',
-    rule: 'NONE',
-  },
-  2: {
-    title: 'BLOCK 02 · 하역장 탐조등',
-    objective: `하역장 탐조등 안에서 ${SPOTLIGHT_HOLD_SEC}초 신원 교란 후 출구로 이동`,
-    directorLine: '하역 라인을 폐쇄한다. 빛 안에서만 신원 오차가 난다.',
-    rule: 'SEARCHLIGHT',
-  },
-  3: {
-    title: 'BLOCK 03 · CCTV 적재 통로',
-    objective: '카메라 레일과 드론 시야를 피해 적재 통로를 통과',
-    directorLine: '선반 사이 사각지대까지 카메라 레일로 덮는다.',
-    rule: 'SURVEILLANCE_FRAME',
-  },
-  4: {
-    title: 'BLOCK 04 · 검문 게이트',
-    objective: '검문 릴레이의 붉은 감시망을 피해 보안문까지 이동',
-    directorLine: '문은 열어두겠다. 대신 모든 게이트가 너를 본다.',
-    rule: 'PRIORITY_TARGETS',
-  },
-  5: {
-    title: 'BLOCK 05 · 폐기물 소각 라인',
-    objective: 'DIRECTOR가 읽은 반복 동선을 버리고 다른 컨베이어 길로 탈출',
-    directorLine: '네가 반복한 적재 경로를 소각 라인으로 바꿨다.',
-    rule: 'HOTSPOT_LOCKDOWN',
-  },
-  6: {
-    title: 'BLOCK 06 · 압축 보관고',
-    objective: '좁아진 컨테이너 보관고에서 시야 틈을 찾아 출구로 이동',
-    directorLine: '적재 공간을 압축한다. 탈출 확률을 다시 계산한다.',
-    rule: 'SURVEILLANCE_FRAME',
-  },
-  7: {
-    title: 'CORE 07 · 물류 관제 코어',
-    objective: '중앙 감시망과 자동 분류 서버를 뚫고 마지막 출구로 이동',
-    directorLine: '최종 봉쇄다. 네 출고 기록은 여기서 폐기된다.',
-    rule: 'FINAL_CORE',
-  },
-};
-
-const SECTOR_PROPS: Record<number, PropSpec[]> = {
-  1: [
-    { kind: 'cell', x: 128, y: 144 }, { kind: 'cell', x: 128, y: 228 },
-    { kind: 'rack', x: 290, y: 421, w: 238, h: 28 },
-    { kind: 'crate', x: 402, y: 352, w: 58, h: 42 },
-    { kind: 'checkpoint', x: 858, y: 92, w: 70 },
-    { kind: 'vent', x: 412, y: 500, w: 78, h: 18 },
-    { kind: 'pipe', x: 650, y: 118, w: 170 },
-    { kind: 'doorPanel', x: 828, y: 126 },
-  ],
-  2: [
-    { kind: 'searchlight', x: 480, y: 320, r: 118 },
-    { kind: 'forklift', x: 342, y: 502, w: 76, h: 48 },
-    { kind: 'rack', x: 454, y: 398, w: 250, h: 28 },
-    { kind: 'crate', x: 742, y: 220, w: 66, h: 48 },
-    { kind: 'pipe', x: 236, y: 548, w: 190 },
-    { kind: 'camera', x: 706, y: 116, r: Math.PI / 2 },
-    { kind: 'vent', x: 824, y: 486, w: 62, h: 18 },
-  ],
-  3: [
-    { kind: 'camera', x: 322, y: 218, r: 0.35 },
-    { kind: 'camera', x: 780, y: 384, r: -2.4 },
-    { kind: 'rack', x: 456, y: 154, w: 292, h: 28 },
-    { kind: 'crate', x: 760, y: 270, w: 74, h: 46 },
-    { kind: 'checkpoint', x: 864, y: 544, w: 78 },
-    { kind: 'doorPanel', x: 842, y: 508 },
-    { kind: 'pipe', x: 120, y: 116, w: 160 },
-    { kind: 'vent', x: 518, y: 516, w: 88, h: 18 },
-  ],
-  4: [
-    { kind: 'relay', x: 222, y: 332 }, { kind: 'relay', x: 738, y: 332 },
-    { kind: 'relay', x: 480, y: 112 },
-    { kind: 'checkpoint', x: 480, y: 548, w: 96 },
-    { kind: 'checkpoint', x: 480, y: 76, w: 96 },
-    { kind: 'crate', x: 320, y: 420, w: 54, h: 84 },
-    { kind: 'crate', x: 640, y: 420, w: 54, h: 84 },
-    { kind: 'camera', x: 480, y: 424, r: -Math.PI / 2 },
-    { kind: 'pipe', x: 360, y: 560, w: 240 },
-  ],
-  5: [
-    { kind: 'scorch', x: 200, y: 320, w: 150, h: 50 },
-    { kind: 'scorch', x: 790, y: 320, w: 130, h: 48 },
-    { kind: 'rack', x: 508, y: 322, w: 286, h: 28 },
-    { kind: 'forklift', x: 116, y: 238, w: 64, h: 42 },
-    { kind: 'checkpoint', x: 868, y: 320, w: 74 },
-    { kind: 'doorPanel', x: 846, y: 296 },
-    { kind: 'vent', x: 510, y: 454, w: 112, h: 18 },
-    { kind: 'camera', x: 514, y: 190, r: Math.PI / 2 },
-  ],
-  6: [
-    { kind: 'compressor', x: 306, y: 318, w: 78, h: 74 },
-    { kind: 'compressor', x: 684, y: 318, w: 78, h: 74 },
-    { kind: 'rack', x: 394, y: 112, w: 276, h: 28 },
-    { kind: 'crate', x: 632, y: 292, w: 94, h: 42 },
-    { kind: 'checkpoint', x: 862, y: 88, w: 74 },
-    { kind: 'camera', x: 838, y: 118, r: Math.PI },
-    { kind: 'pipe', x: 470, y: 584, w: 280 },
-    { kind: 'vent', x: 118, y: 118, w: 84, h: 18 },
-  ],
-  7: [
-    { kind: 'server', x: 306, y: 326, w: 72, h: 96 },
-    { kind: 'server', x: 654, y: 326, w: 72, h: 96 },
-    { kind: 'rack', x: 480, y: 322, w: 30, h: 260 },
-    { kind: 'checkpoint', x: 480, y: 76, w: 100 },
-    { kind: 'relay', x: 480, y: 138 },
-    { kind: 'camera', x: 480, y: 488, r: -Math.PI / 2 },
-    { kind: 'doorPanel', x: 480, y: 104 },
-  ],
-};
-
-const SEARCHLIGHT_ROUTE_WAVE_2 = [
-  { x: 170, y: 126 },
-  { x: 380, y: 126 },
-  { x: 582, y: 332 },
-  { x: 780, y: 486 },
-];
 
 /** Step 4 검증용 무적 치트 — devtools 콘솔에서 window.__god = true (DEV 빌드에서만 활성 — 프로덕션은 상수 false로 DCE 대상) */
 function isGodMode(): boolean {
@@ -362,7 +74,6 @@ export class ArenaScene extends Phaser.Scene {
 
   private playerBullets!: Phaser.Physics.Arcade.Group;
   private enemyBullets!: Phaser.Physics.Arcade.Group;
-  private walls!: Phaser.Physics.Arcade.StaticGroup;
 
   private playerDead = false;
   private waveClearedEmitted = false;
@@ -391,46 +102,14 @@ export class ArenaScene extends Phaser.Scene {
   private predictionMeter!: Phaser.GameObjects.Graphics;
   /** 정산 표시 오브젝트 — 인터벌이 덮기 전에 걷어야 해서 참조를 들고 있는다. */
   private stampObjects: Phaser.GameObjects.GameObject[] = [];
-  private stageRule: StageRule = 'NONE';
-  private stageObjects: Phaser.GameObjects.GameObject[] = [];
-  private wallObjects: Phaser.GameObjects.GameObject[] = [];
-  private patrolAssignSeq = 0;
-  private stageRuleDamageAcc = 0;
-  private spotlightHoldSec = 0;
-  private spotlight!: Phaser.GameObjects.Graphics;
-  private spotlightCenter = new Phaser.Math.Vector2();
-  private waveEntryGraceUntil = 0;
-  private cameraFrame: Phaser.Geom.Rectangle | null = null;
-  private securitySensors: SecuritySensor[] = [];
-  private priorityTargets = new Set<Enemy>();
-  private priorityRings!: Phaser.GameObjects.Graphics;
-  private visionGraphics!: Phaser.GameObjects.Graphics;
-  private detectionLevel = 0;
-  private suspicionLevel = 0;
-  private securityMood: SecurityMood = 'clear';
-  private lastKnownPlayer: Phaser.Math.Vector2 | null = null;
-  private investigationUntil = 0;
-  private disabledBodies: { x: number; y: number; type: EnemyType; discovered: boolean; marker: Phaser.GameObjects.Graphics }[] = [];
-  private securityLogText!: Phaser.GameObjects.Text;
-  private securityLogUntil = 0;
-  private exitZone: Phaser.Geom.Circle | null = null;
-  private exitReached = false;
-  private exitGraphics!: Phaser.GameObjects.Graphics;
 
   private waveText!: Phaser.GameObjects.Text;
-  private storyText!: Phaser.GameObjects.Text;
-  private objectiveText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
-  private attackGauge!: Phaser.GameObjects.Graphics;
   private muteText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('ArenaScene');
-  }
-
-  preload() {
-    preloadEntityTextures(this);
   }
 
   create() {
@@ -441,8 +120,6 @@ export class ArenaScene extends Phaser.Scene {
     this.enemies = this.physics.add.group({ classType: Enemy, runChildUpdate: false });
     this.playerBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
     this.enemyBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
-    this.walls = this.physics.add.staticGroup();
-    this.visionGraphics = this.add.graphics().setDepth(-8);
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
     this.player.onDash = () => {
@@ -453,10 +130,6 @@ export class ArenaScene extends Phaser.Scene {
     this.physics.add.overlap(this.playerBullets, this.enemies, this.handlePlayerBulletHitEnemy, undefined, this);
     this.physics.add.overlap(this.player, this.enemies, this.handleEnemyTouchPlayer, undefined, this);
     this.physics.add.overlap(this.player, this.enemyBullets, this.handleEnemyBulletHitPlayer, undefined, this);
-    this.physics.add.collider(this.player, this.walls);
-    this.physics.add.collider(this.enemies, this.walls);
-    this.physics.add.collider(this.playerBullets, this.walls, this.handleBulletHitWall, undefined, this);
-    this.physics.add.collider(this.enemyBullets, this.walls, this.handleBulletHitWall, undefined, this);
 
     this.playerDead = false;
     this.runEnded = false;
@@ -480,26 +153,6 @@ export class ArenaScene extends Phaser.Scene {
     this.prevHabit = null;
     this.score = { director: 0, player: 0 };
     this.brokePrediction = false;
-    this.stageRule = 'NONE';
-    this.stageObjects = [];
-    this.wallObjects = [];
-    this.patrolAssignSeq = 0;
-    this.stageRuleDamageAcc = 0;
-    this.spotlightHoldSec = 0;
-    this.detectionLevel = 0;
-    this.waveEntryGraceUntil = 0;
-    this.suspicionLevel = 0;
-    this.securityMood = 'clear';
-    this.lastKnownPlayer = null;
-    this.investigationUntil = 0;
-    for (const body of this.disabledBodies) body.marker.destroy();
-    this.disabledBodies = [];
-    this.securityLogUntil = 0;
-    this.exitZone = null;
-    this.exitReached = false;
-    this.cameraFrame = null;
-    this.securitySensors = [];
-    this.priorityTargets.clear();
 
     this.createHud();
     attachDirectorLog(this);
@@ -516,7 +169,7 @@ export class ArenaScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-M', () => toggleMute());
 
     // 웨이브 루프 시작 — 웨이브 1은 항상 고정 오프닝(로그가 아직 없음). 이후는 onWaveCleared가 이어간다.
-    this.showOpeningSlate(() => this.beginWave(OPENING_WAVE));
+    this.beginWave(OPENING_WAVE);
 
     if (import.meta.env.DEV) {
       this.exposeStressSpawnHook();
@@ -540,25 +193,15 @@ export class ArenaScene extends Phaser.Scene {
     );
 
     const fireAngles = this.player.update(time, delta, this.enemies);
-    if (fireAngles.length > 0) {
-      playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
-      this.telemetry.recordManualAttack();
-      this.raiseNoiseInvestigation({ x: this.player.x, y: this.player.y });
-    }
+    if (fireAngles.length > 0) playShoot(); // 멀티샷이어도 발사 이벤트당 1회만(탄마다 겹쳐 시끄러워지지 않게)
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
     const enemyList = this.enemies.getChildren() as Enemy[];
-    const behaviorContext: EnemyBehaviorContext = {
-      canSeePlayer: (enemy, range, fov) => this.enemyHasPlayerLineOfSight(enemy, range, fov),
-      investigationPoint: this.investigationPoint(),
-    };
     for (const enemy of enemyList) {
       if (!enemy.active) continue;
-      enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet, behaviorContext);
+      enemy.updateBehavior(time, delta, this.player, this.fireEnemyBullet);
     }
 
-    this.updateStealthSystems(dt);
-    this.updateStageRule(dt);
     updateMutation(this, dt);
     if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
 
@@ -606,7 +249,6 @@ export class ArenaScene extends Phaser.Scene {
     if (!e) return null;
     e.setPosition(x, y);
     e.spawn(type, elite);
-    e.setPatrolRoute(this.patrolRouteFor(type, x, y));
     return e;
   }
 
@@ -650,12 +292,6 @@ export class ArenaScene extends Phaser.Scene {
     if (dead) this.onEnemyDeath(enemy);
   };
 
-  private handleBulletHitWall = (bulletObj: unknown) => {
-    const bullet = bulletObj as Bullet;
-    if (!bullet.active) return;
-    bullet.hideAfterHit();
-  };
-
   private handleEnemyTouchPlayer = (_playerObj: unknown, enemyObj: unknown) => {
     const enemy = enemyObj as Enemy;
     if (!enemy.active) return;
@@ -681,7 +317,6 @@ export class ArenaScene extends Phaser.Scene {
   private onEnemyDeath(enemy: Enemy) {
     this.telemetry.recordKill(enemy.enemyType);
     playKill();
-    if (this.priorityTargets.delete(enemy)) this.flashStageNote('RELAY JAMMED', '#6ee7ff');
 
     const wasSplit = enemy.canSplit;
     const x = enemy.x, y = enemy.y;
@@ -690,7 +325,6 @@ export class ArenaScene extends Phaser.Scene {
     enemy.body.enable = false;
     enemy.body.setVelocity(0, 0);
     killBurst(this, x, y, color);
-    this.leaveDisabledBody(x, y, enemy.enemyType, color);
 
     if (wasSplit) {
       // 분열 위치: 임의 축 위 균등 분배 오프셋(VOLATILE이면 3기)
@@ -706,47 +340,6 @@ export class ArenaScene extends Phaser.Scene {
     this.checkWaveClear();
   }
 
-  private leaveDisabledBody(x: number, y: number, type: EnemyType, color: number) {
-    const marker = this.add.graphics().setDepth(-7);
-    marker.fillStyle(color, 0.12).fillCircle(x, y, 15);
-    marker.lineStyle(1, color, 0.38).strokeCircle(x, y, 18);
-    marker.lineStyle(1, 0xe8e8ec, 0.22).lineBetween(x - 11, y - 7, x + 11, y + 7).lineBetween(x - 11, y + 7, x + 11, y - 7);
-    this.disabledBodies.push({ x, y, type, discovered: false, marker });
-  }
-
-  private checkBodyDiscoveries() {
-    for (const body of this.disabledBodies) {
-      if (body.discovered) continue;
-      const foundByEnemy = (this.enemies.getChildren() as Enemy[]).some((enemy) => {
-        if (!enemy.active) return false;
-        const range = body.type === 'shooter' ? BODY_DISCOVERY_RANGE + 40 : BODY_DISCOVERY_RANGE;
-        const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, body.x, body.y);
-        return dist <= range && !this.segmentHitsWall(enemy.x, enemy.y, body.x, body.y);
-      });
-      const foundBySensor = this.securitySensors.some((sensor) => {
-        const angle = this.sensorAngle(sensor);
-        const dx = body.x - sensor.x;
-        const dy = body.y - sensor.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > sensor.range * 0.82) return false;
-        if (Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - angle)) > sensor.fov / 2) return false;
-        return !this.segmentHitsWall(sensor.x, sensor.y, body.x, body.y);
-      });
-      if (foundByEnemy || foundBySensor) {
-        body.discovered = true;
-        body.marker.clear();
-        body.marker.fillStyle(0xff2d2d, 0.16).fillCircle(body.x, body.y, 19);
-        body.marker.lineStyle(2, 0xff2d2d, 0.62).strokeCircle(body.x, body.y, 23);
-        this.suspicionLevel = Math.max(this.suspicionLevel, SUSPICION_ALERT_THRESHOLD);
-        this.setInvestigationPoint({ x: body.x, y: body.y }, INVESTIGATION_HOLD_MS + 900);
-        this.raiseSecurityNetwork(NETWORK_ALERT_MS + 950);
-        this.updateSecurityMood();
-        this.flashStageNote('DISABLED UNIT DISCOVERED', '#ff2d2d');
-        this.setSecurityLog('제압 흔적 발견: 보안망이 잔해 주변을 수색한다', '#ff2d2d');
-      }
-    }
-  }
-
   private handlePlayerDeath() {
     if (this.playerDead) return;
     this.playerDead = true;
@@ -757,8 +350,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkWaveClear() {
     if (this.waveClearedEmitted || !this.enemiesSpawned || this.playerDead) return;
-    const canEscape = this.exitReached;
-    if (canEscape && this.stageObjectiveComplete()) {
+    if (this.enemies.countActive(true) === 0) {
       this.waveClearedEmitted = true;
       console.log('[ArenaScene] wave-cleared', { wave: this.currentWave });
       this.events.emit('wave-cleared', this.currentWave);
@@ -773,926 +365,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemiesSpawned = false;
     this.activeMutation = d.mutation;
     this.waveStartAt = this.time.now;
-    this.waveEntryGraceUntil = this.time.now + WAVE_ENTRY_GRACE_MS;
     runDirective(this, d);
-    this.setupStageRule();
-    this.showRuleBanner(d);
-  }
-
-  private sectorStory(): SectorStory {
-    return SECTOR_STORIES[this.currentWave] ?? SECTOR_STORIES[FINAL_WAVE];
-  }
-
-  private setupStageRule() {
-    this.clearStageRule();
-    const story = this.sectorStory();
-    this.stageRule = story.rule;
-    this.stageRuleDamageAcc = 0;
-    this.spotlightHoldSec = 0;
-    this.storyText.setText(story.title);
-    this.objectiveText.setText(story.objective);
-    this.showSceneCard(story);
-    this.setupSectorMap();
-    this.setupExitZone();
-
-    switch (this.stageRule) {
-      case 'SEARCHLIGHT':
-        this.setupSpotlight();
-        break;
-      case 'SURVEILLANCE_FRAME':
-        this.setupCameraFrame(this.currentWave >= 6 ? 0.18 : 0);
-        break;
-      case 'PRIORITY_TARGETS':
-        this.setupPriorityTargets();
-        break;
-      case 'HOTSPOT_LOCKDOWN':
-        this.flashStageNote('DIRECTOR LOCKS YOUR ROUTE', '#ff2d2d');
-        break;
-      case 'FINAL_CORE':
-        this.setupCameraFrame(0.16);
-        this.setupPriorityTargets(true);
-        break;
-      case 'NONE':
-        break;
-    }
-  }
-
-  private clearStageRule() {
-    for (const o of this.stageObjects) o.destroy();
-    this.stageObjects = [];
-    this.clearSectorMap();
-    this.priorityTargets.clear();
-    this.cameraFrame = null;
-    this.securitySensors = [];
-    for (const body of this.disabledBodies) body.marker.destroy();
-    this.disabledBodies = [];
-    this.lastKnownPlayer = null;
-    this.investigationUntil = 0;
-    this.suspicionLevel = 0;
-    this.securityMood = 'clear';
-    this.stageRule = 'NONE';
-    this.stageRuleDamageAcc = 0;
-    this.spotlightHoldSec = 0;
-    this.exitZone = null;
-    this.exitReached = false;
-    this.visionGraphics?.clear();
-  }
-
-  private clearSectorMap() {
-    this.walls?.clear(true, true);
-    for (const o of this.wallObjects) o.destroy();
-    this.wallObjects = [];
-  }
-
-  private sectorLayout(): SectorLayout {
-    return SECTOR_LAYOUTS[this.currentWave] ?? SECTOR_LAYOUTS[FINAL_WAVE];
-  }
-
-  private patrolRouteFor(type: EnemyType, x: number, y: number): { x: number; y: number }[] {
-    const layout = this.sectorLayout();
-    if (layout.patrols.length === 0) return [layout.exit];
-
-    const preferred = type === 'shooter' ? 1 : type === 'splitter' ? 2 : 0;
-    const route = layout.patrols[(this.patrolAssignSeq + preferred) % layout.patrols.length];
-    this.patrolAssignSeq++;
-    const start = this.nearestPassablePoint(x, y, route[0] ?? layout.start);
-    const adapted = this.adaptPatrolRouteToLastRun(type, [start, ...route]);
-    return this.expandPatrolRouteAroundWalls(adapted);
-  }
-
-  private nearestPassablePoint(x: number, y: number, fallback: { x: number; y: number }): { x: number; y: number } {
-    const clamped = {
-      x: Phaser.Math.Clamp(x, 48, this.scale.width - 48),
-      y: Phaser.Math.Clamp(y, 48, this.scale.height - 48),
-    };
-    return this.pointInsideWall(clamped.x, clamped.y) ? this.passableNear(clamped, fallback) : clamped;
-  }
-
-  private adaptPatrolRouteToLastRun(type: EnemyType, baseRoute: { x: number; y: number }[]): { x: number; y: number }[] {
-    const previous = this.waveLogs[this.waveLogs.length - 1];
-    if (!previous || !this.lastHotspot) return baseRoute;
-
-    const hot = this.passableNear(this.lastHotspot, baseRoute[1] ?? baseRoute[0]);
-    const quadrant = this.dominantQuadrant(previous);
-    const clamp = (p: { x: number; y: number }) => this.nearestPassablePoint(p.x, p.y, hot);
-    const horizontal = quadrant.endsWith('W') ? -1 : 1;
-    const vertical = quadrant.startsWith('N') ? -1 : 1;
-    const flankA = clamp({ x: hot.x + horizontal * 118, y: hot.y });
-    const flankB = clamp({ x: hot.x, y: hot.y + vertical * 92 });
-
-    if (type === 'shooter') {
-      return [baseRoute[0], flankA, hot, flankB];
-    }
-    if (type === 'splitter') {
-      return [baseRoute[0], hot, flankB];
-    }
-    if (previous.movement.wallHugRatio >= 0.42 || previous.movement.hotspotConcentration >= 0.22) {
-      return [baseRoute[0], hot, flankA, ...(baseRoute.slice(1, 3))];
-    }
-    return [baseRoute[0], flankA, ...baseRoute.slice(1)];
-  }
-
-  private dominantQuadrant(log: WaveLog): 'NW' | 'NE' | 'SW' | 'SE' {
-    const entries = Object.entries(log.movement.quadrantTime) as ['NW' | 'NE' | 'SW' | 'SE', number][];
-    return entries.reduce((best, cur) => (cur[1] > best[1] ? cur : best))[0];
-  }
-
-  private passableNear(point: { x: number; y: number }, fallback: { x: number; y: number }): { x: number; y: number } {
-    const offsets = [
-      { x: 0, y: 0 }, { x: 42, y: 0 }, { x: -42, y: 0 }, { x: 0, y: 42 }, { x: 0, y: -42 },
-      { x: 84, y: 0 }, { x: -84, y: 0 }, { x: 0, y: 84 }, { x: 0, y: -84 },
-      { x: 58, y: 58 }, { x: -58, y: 58 }, { x: 58, y: -58 }, { x: -58, y: -58 },
-    ];
-    for (const o of offsets) {
-      const p = {
-        x: Phaser.Math.Clamp(point.x + o.x, 48, this.scale.width - 48),
-        y: Phaser.Math.Clamp(point.y + o.y, 48, this.scale.height - 48),
-      };
-      if (!this.pointInsideWall(p.x, p.y)) return p;
-    }
-    return fallback;
-  }
-
-  private expandPatrolRouteAroundWalls(route: { x: number; y: number }[]): { x: number; y: number }[] {
-    if (route.length < 2) return route;
-    let expanded = route.map((p) => this.nearestPassablePoint(p.x, p.y, p));
-
-    for (let pass = 0; pass < 3; pass++) {
-      let changed = false;
-      const next: { x: number; y: number }[] = [expanded[0]];
-      for (let i = 1; i < expanded.length; i++) {
-        const from = next[next.length - 1];
-        const to = expanded[i];
-        if (this.segmentHitsWall(from.x, from.y, to.x, to.y)) {
-          const detour = this.bestDetourPoint(from, to);
-          if (detour) {
-            next.push(detour);
-            changed = true;
-          }
-        }
-        next.push(to);
-      }
-      expanded = next;
-      if (!changed) break;
-    }
-
-    return expanded.filter((p, i, arr) => i === 0 || Phaser.Math.Distance.Between(p.x, p.y, arr[i - 1].x, arr[i - 1].y) > 10);
-  }
-
-  private bestDetourPoint(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number } | null {
-    const wall = this.firstBlockingWall(from.x, from.y, to.x, to.y);
-    if (!wall) return null;
-    const candidates = this.detourCandidates(wall);
-    let best: { p: { x: number; y: number }; cost: number } | null = null;
-
-    for (const p of candidates) {
-      if (this.pointInsideWall(p.x, p.y)) continue;
-      if (this.segmentHitsWall(from.x, from.y, p.x, p.y)) continue;
-      if (this.segmentHitsWall(p.x, p.y, to.x, to.y)) continue;
-      const cost = Phaser.Math.Distance.Between(from.x, from.y, p.x, p.y) + Phaser.Math.Distance.Between(p.x, p.y, to.x, to.y);
-      if (!best || cost < best.cost) best = { p, cost };
-    }
-
-    return best?.p ?? this.passableNear({
-      x: to.x < wall.x ? wall.x - wall.w / 2 - PATROL_DETOUR_MARGIN : wall.x + wall.w / 2 + PATROL_DETOUR_MARGIN,
-      y: to.y < wall.y ? wall.y - wall.h / 2 - PATROL_DETOUR_MARGIN : wall.y + wall.h / 2 + PATROL_DETOUR_MARGIN,
-    }, to);
-  }
-
-  private detourCandidates(wall: WallSpec): { x: number; y: number }[] {
-    const l = wall.x - wall.w / 2 - PATROL_DETOUR_MARGIN;
-    const r = wall.x + wall.w / 2 + PATROL_DETOUR_MARGIN;
-    const t = wall.y - wall.h / 2 - PATROL_DETOUR_MARGIN;
-    const b = wall.y + wall.h / 2 + PATROL_DETOUR_MARGIN;
-    const cx = wall.x;
-    const cy = wall.y;
-    return [
-      { x: l, y: t }, { x: r, y: t }, { x: l, y: b }, { x: r, y: b },
-      { x: l, y: cy }, { x: r, y: cy }, { x: cx, y: t }, { x: cx, y: b },
-    ].map((p) => ({
-      x: Phaser.Math.Clamp(p.x, 48, this.scale.width - 48),
-      y: Phaser.Math.Clamp(p.y, 48, this.scale.height - 48),
-    }));
-  }
-
-  private enemyHasPlayerLineOfSight(enemy: Enemy, range: number, fov: number): boolean {
-    if (this.time.now < this.waveEntryGraceUntil) return false;
-    const dx = this.player.x - enemy.x;
-    const dy = this.player.y - enemy.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > range) return false;
-    const angle = Math.atan2(dy, dx);
-    if (Math.abs(Phaser.Math.Angle.Wrap(angle - enemy.rotation)) > fov / 2) return false;
-    return !this.segmentHitsWall(enemy.x, enemy.y, this.player.x, this.player.y);
-  }
-
-  private pointInsideWall(x: number, y: number): boolean {
-    return this.sectorLayout().walls.some((wall) => this.wallRect(wall).contains(x, y));
-  }
-
-  private segmentHitsWall(x1: number, y1: number, x2: number, y2: number): boolean {
-    const line = new Phaser.Geom.Line(x1, y1, x2, y2);
-    return this.sectorLayout().walls.some((wall) => Phaser.Geom.Intersects.LineToRectangle(line, this.wallRect(wall)));
-  }
-
-  private firstBlockingWall(x1: number, y1: number, x2: number, y2: number): WallSpec | null {
-    const line = new Phaser.Geom.Line(x1, y1, x2, y2);
-    return this.sectorLayout().walls.find((wall) => Phaser.Geom.Intersects.LineToRectangle(line, this.wallRect(wall))) ?? null;
-  }
-
-  private rayEndBeforeWall(x: number, y: number, angle: number, range: number): { x: number; y: number } {
-    const step = 12;
-    let last = { x, y };
-    for (let d = step; d <= range; d += step) {
-      const p = { x: x + Math.cos(angle) * d, y: y + Math.sin(angle) * d };
-      if (this.pointInsideWall(p.x, p.y)) return last;
-      last = p;
-    }
-    return { x: x + Math.cos(angle) * range, y: y + Math.sin(angle) * range };
-  }
-
-  private wallRect(wall: WallSpec): Phaser.Geom.Rectangle {
-    return new Phaser.Geom.Rectangle(wall.x - wall.w / 2, wall.y - wall.h / 2, wall.w, wall.h);
-  }
-
-  private setupSectorMap() {
-    const layout = this.sectorLayout();
-    this.player.setPosition(layout.start.x, layout.start.y);
-    this.player.body.setVelocity(0, 0);
-    this.drawSectorAtmosphere();
-    this.drawStartPad(layout.start.x, layout.start.y);
-    for (const wall of layout.walls) this.addSectorWall(wall);
-    this.drawAdaptiveRouteMemory();
-  }
-
-  private drawSectorAtmosphere() {
-    const props = SECTOR_PROPS[this.currentWave] ?? [];
-    if (props.length === 0) return;
-    const g = this.trackWallObject(this.add.graphics().setDepth(-44));
-    for (const p of props) {
-      this.drawSectorProp(g, p);
-      this.registerSecuritySensorsForProp(p);
-    }
-  }
-
-  private registerSecuritySensorsForProp(p: PropSpec) {
-    if (p.kind === 'camera') {
-      const frameBlock = this.currentWave === 3;
-      const core = this.currentWave === 7;
-      this.securitySensors.push({
-        type: 'cctv',
-        x: p.x,
-        y: p.y,
-        angle: p.r ?? 0,
-        range: frameBlock ? 285 : core ? 255 : 235,
-        fov: Phaser.Math.DegToRad(frameBlock ? 46 : 58),
-        sweep: Phaser.Math.DegToRad(frameBlock ? 18 : core ? 24 : 32),
-        speed: frameBlock ? 0.0009 : 0.00135,
-        color: 0x6ee7ff,
-      });
-      return;
-    }
-    if (p.kind === 'relay') {
-      const lockdown = this.currentWave === 4 || this.currentWave === 7;
-      for (let i = 0; i < 4; i++) {
-        this.securitySensors.push({
-          type: 'relay',
-          x: p.x,
-          y: p.y,
-          angle: i * Math.PI / 2,
-          range: lockdown ? 185 : 155,
-          fov: Phaser.Math.DegToRad(lockdown ? 46 : 40),
-          sweep: Phaser.Math.DegToRad(lockdown ? 9 : 14),
-          speed: lockdown ? 0.00072 : 0.001,
-          color: 0xff2d2d,
-        });
-      }
-    }
-  }
-
-  private drawSectorProp(g: Phaser.GameObjects.Graphics, p: PropSpec) {
-    switch (p.kind) {
-      case 'cell':
-        this.drawCellProp(g, p.x, p.y);
-        break;
-      case 'searchlight':
-        this.drawSearchlightProp(g, p.x, p.y, p.r ?? 110);
-        break;
-      case 'camera':
-        this.drawCameraProp(g, p.x, p.y, p.r ?? 0);
-        break;
-      case 'relay':
-        this.drawRelayProp(g, p.x, p.y);
-        break;
-      case 'scorch':
-        this.drawScorchProp(g, p.x, p.y, p.w ?? 140, p.h ?? 48);
-        break;
-      case 'compressor':
-        this.drawCompressorProp(g, p.x, p.y, p.w ?? 80, p.h ?? 70);
-        break;
-      case 'server':
-        this.drawServerProp(g, p.x, p.y, p.w ?? 72, p.h ?? 96);
-        break;
-      case 'vent':
-        this.drawVentProp(g, p.x, p.y, p.w ?? 80, p.h ?? 18);
-        break;
-      case 'pipe':
-        this.drawPipeProp(g, p.x, p.y, p.w ?? 160);
-        break;
-      case 'doorPanel':
-        this.drawDoorPanelProp(g, p.x, p.y);
-        break;
-      case 'rack':
-        this.drawRackProp(g, p.x, p.y, p.w ?? 160, p.h ?? 28);
-        break;
-      case 'crate':
-        this.drawCrateProp(g, p.x, p.y, p.w ?? 58, p.h ?? 42);
-        break;
-      case 'forklift':
-        this.drawForkliftProp(g, p.x, p.y, p.w ?? 72, p.h ?? 46);
-        break;
-      case 'checkpoint':
-        this.drawCheckpointProp(g, p.x, p.y, p.w ?? 78);
-        break;
-    }
-  }
-
-  private drawCellProp(g: Phaser.GameObjects.Graphics, x: number, y: number) {
-    g.fillStyle(0x0a0f16, 0.78).fillRoundedRect(x - 42, y - 28, 84, 56, 3);
-    g.lineStyle(1, 0x344155, 0.58).strokeRoundedRect(x - 42, y - 28, 84, 56, 3);
-    g.fillStyle(0x161c27, 0.9).fillRect(x - 34, y + 8, 52, 10);
-    g.lineStyle(1, 0x6ee7ff, 0.16);
-    for (let i = 0; i < 5; i++) g.lineBetween(x - 28 + i * 12, y - 22, x - 28 + i * 12, y + 20);
-  }
-
-  private drawSearchlightProp(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number) {
-    g.fillStyle(0xe8e8ec, 0.035).fillCircle(x, y, r);
-    g.lineStyle(1, 0xe8e8ec, 0.18).strokeCircle(x, y, r);
-    g.fillStyle(0x111722, 0.92).fillCircle(x, y, 20);
-    g.lineStyle(2, 0x6ee7ff, 0.34).strokeCircle(x, y, 24);
-    g.lineStyle(1, 0xe8e8ec, 0.22).lineBetween(x - 34, y, x + 34, y).lineBetween(x, y - 34, x, y + 34);
-  }
-
-  private drawCameraProp(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number) {
-    const dx = Math.cos(r), dy = Math.sin(r);
-    const px = -dy, py = dx;
-    g.lineStyle(2, 0x344155, 0.78).lineBetween(x - dx * 22, y - dy * 22, x, y);
-    g.fillStyle(0x141b26, 0.96).fillTriangle(
-      x + dx * 22, y + dy * 22,
-      x - dx * 10 + px * 12, y - dy * 10 + py * 12,
-      x - dx * 10 - px * 12, y - dy * 10 - py * 12,
-    );
-    g.fillStyle(0x6ee7ff, 0.72).fillCircle(x + dx * 18, y + dy * 18, 4);
-    g.lineStyle(1, 0x6ee7ff, 0.12)
-      .lineBetween(x + dx * 24, y + dy * 24, x + dx * 74 + px * 24, y + dy * 74 + py * 24)
-      .lineBetween(x + dx * 24, y + dy * 24, x + dx * 74 - px * 24, y + dy * 74 - py * 24);
-  }
-
-  private drawRelayProp(g: Phaser.GameObjects.Graphics, x: number, y: number) {
-    g.fillStyle(0x0b0f18, 0.92).fillCircle(x, y, 22);
-    g.lineStyle(2, 0xff2d2d, 0.45).strokeCircle(x, y, 26);
-    g.fillStyle(0xff2d2d, 0.35).fillCircle(x, y, 7);
-    g.lineStyle(1, 0xe8e8ec, 0.18)
-      .lineBetween(x - 32, y, x - 10, y)
-      .lineBetween(x + 10, y, x + 32, y)
-      .lineBetween(x, y - 32, x, y - 10)
-      .lineBetween(x, y + 10, x, y + 32);
-  }
-
-  private drawScorchProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    g.fillStyle(0xff2d2d, 0.08).fillEllipse(x, y, w, h);
-    g.lineStyle(1, 0xff2d2d, 0.28);
-    for (let i = -2; i <= 2; i++) g.lineBetween(x - w * 0.34, y + i * 8, x + w * 0.34, y + i * 8 - 18);
-    g.fillStyle(0x05070b, 0.38).fillEllipse(x + 12, y + 6, w * 0.45, h * 0.48);
-  }
-
-  private drawCompressorProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    g.fillStyle(0x101722, 0.95).fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
-    g.lineStyle(1, 0x344155, 0.7).strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
-    g.fillStyle(0x6ee7ff, 0.16).fillTriangle(x - 18, y, x - 2, y - 12, x - 2, y + 12);
-    g.fillTriangle(x + 18, y, x + 2, y - 12, x + 2, y + 12);
-    g.lineStyle(2, 0xe8e8ec, 0.16).lineBetween(x - w / 2 + 8, y, x + w / 2 - 8, y);
-  }
-
-  private drawServerProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    g.fillStyle(0x0b1018, 0.96).fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
-    g.lineStyle(1, 0x344155, 0.72).strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
-    for (let i = 0; i < 5; i++) {
-      const yy = y - h / 2 + 12 + i * 16;
-      g.lineStyle(1, 0x6ee7ff, 0.18).lineBetween(x - w / 2 + 8, yy, x + w / 2 - 8, yy);
-      g.fillStyle(i % 2 === 0 ? 0x6ee7ff : 0xff2d2d, 0.42).fillCircle(x + w / 2 - 14, yy + 5, 2);
-    }
-  }
-
-  private drawVentProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    g.fillStyle(0x0a0f16, 0.9).fillRoundedRect(x - w / 2, y - h / 2, w, h, 3);
-    g.lineStyle(1, 0x344155, 0.7).strokeRoundedRect(x - w / 2, y - h / 2, w, h, 3);
-    g.lineStyle(1, 0xe8e8ec, 0.18);
-    for (let i = 0; i < 6; i++) {
-      const xx = x - w / 2 + 10 + i * ((w - 20) / 5);
-      g.lineBetween(xx, y - h / 2 + 4, xx, y + h / 2 - 4);
-    }
-  }
-
-  private drawPipeProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number) {
-    g.lineStyle(5, 0x202938, 0.7).lineBetween(x - w / 2, y, x + w / 2, y);
-    g.lineStyle(1, 0x6ee7ff, 0.13).lineBetween(x - w / 2, y - 4, x + w / 2, y - 4);
-    for (let i = 0; i < 4; i++) {
-      const xx = x - w / 2 + 24 + i * ((w - 48) / 3);
-      g.fillStyle(0x111722, 0.95).fillRect(xx - 4, y - 9, 8, 18);
-    }
-  }
-
-  private drawDoorPanelProp(g: Phaser.GameObjects.Graphics, x: number, y: number) {
-    g.fillStyle(0x0b1018, 0.94).fillRoundedRect(x - 22, y - 30, 44, 60, 4);
-    g.lineStyle(1, 0x6ee7ff, 0.42).strokeRoundedRect(x - 22, y - 30, 44, 60, 4);
-    g.fillStyle(0x6ee7ff, 0.38).fillRect(x - 13, y - 18, 26, 5);
-    g.fillStyle(0xe8e8ec, 0.28).fillCircle(x, y + 12, 5);
-  }
-
-  private drawRackProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    const left = x - w / 2;
-    const top = y - h / 2;
-    g.fillStyle(0x0b1018, 0.88).fillRoundedRect(left, top, w, h, 3);
-    g.fillStyle(0x182231, 0.92).fillRect(left, top - 9, w, 9);
-    g.fillStyle(0x05070b, 0.48).fillRect(left + 8, top + h, w, 13);
-    g.lineStyle(1, 0x596579, 0.52).strokeRoundedRect(left, top - 9, w, h + 9, 3);
-    g.lineStyle(1, 0xf59e0b, 0.32);
-    for (let i = 0; i < Math.max(2, Math.floor(w / 52)); i++) {
-      const xx = left + 22 + i * 52;
-      g.lineBetween(xx, top - 8, xx + 18, top);
-      g.lineBetween(xx + 18, top - 8, xx, top);
-    }
-    g.lineStyle(1, 0x6ee7ff, 0.12).lineBetween(left + 8, top + 5, left + w - 8, top + 5);
-  }
-
-  private drawCrateProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    const left = x - w / 2;
-    const top = y - h / 2;
-    g.fillStyle(0x151d2a, 0.94).fillRoundedRect(left, top, w, h, 3);
-    g.fillStyle(0x0a0f16, 0.5).fillRect(left + 7, top + h, w, 9);
-    g.lineStyle(1, 0x6f7a8e, 0.46).strokeRoundedRect(left, top, w, h, 3);
-    g.lineStyle(1, 0xf59e0b, 0.32)
-      .lineBetween(left + 8, top + 8, left + w - 8, top + h - 8)
-      .lineBetween(left + w - 8, top + 8, left + 8, top + h - 8);
-    g.fillStyle(0xe8e8ec, 0.18).fillRect(left + 9, top + 9, Math.min(24, w - 18), 4);
-  }
-
-  private drawForkliftProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    const left = x - w / 2;
-    const top = y - h / 2;
-    g.fillStyle(0xf59e0b, 0.62).fillRoundedRect(left + 12, top + 10, w * 0.46, h * 0.5, 3);
-    g.fillStyle(0x111722, 0.9).fillRect(left + w * 0.5, top + 5, 8, h - 4);
-    g.lineStyle(2, 0x8a93a3, 0.72)
-      .lineBetween(left + w * 0.64, top + 5, left + w * 0.64, top + h + 8)
-      .lineBetween(left + w * 0.74, top + h + 6, left + w + 10, top + h + 6)
-      .lineBetween(left + w * 0.74, top + h - 2, left + w + 8, top + h - 2);
-    g.fillStyle(0x05070b, 0.9).fillCircle(left + 18, top + h - 2, 6).fillCircle(left + w * 0.55, top + h - 2, 6);
-    g.fillStyle(0x6ee7ff, 0.34).fillRect(left + 20, top + 14, 12, 8);
-  }
-
-  private drawCheckpointProp(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number) {
-    g.lineStyle(2, 0xff2d2d, 0.45).lineBetween(x - w / 2, y, x + w / 2, y);
-    g.lineStyle(1, 0xf59e0b, 0.55);
-    for (let i = 0; i < 6; i++) {
-      const xx = x - w / 2 + i * (w / 5);
-      g.lineBetween(xx - 7, y + 8, xx + 7, y - 8);
-    }
-    g.fillStyle(0x0b1018, 0.94).fillRoundedRect(x - 20, y - 18, 40, 36, 3);
-    g.lineStyle(1, 0x6ee7ff, 0.35).strokeRoundedRect(x - 20, y - 18, 40, 36, 3);
-    g.fillStyle(0x6ee7ff, 0.45).fillRect(x - 11, y - 8, 22, 4);
-  }
-
-  private drawStartPad(x: number, y: number) {
-    const g = this.trackWallObject(this.add.graphics().setDepth(-42));
-    g.fillStyle(0xe8e8ec, 0.045).fillCircle(x, y, 28);
-    g.lineStyle(1, 0xe8e8ec, 0.28).strokeCircle(x, y, 28);
-    g.lineStyle(1, 0x6ee7ff, 0.36).lineBetween(x - 16, y, x + 16, y).lineBetween(x, y - 16, x, y + 16);
-  }
-
-  private addSectorWall(wall: WallSpec) {
-    const bodyRect = this.add.rectangle(wall.x, wall.y, wall.w, wall.h, 0x111722, 0.01);
-    this.walls.add(bodyRect);
-    const body = bodyRect.body as Phaser.Physics.Arcade.StaticBody;
-    body.setSize(wall.w, wall.h);
-    body.updateFromGameObject();
-
-    const x = wall.x - wall.w / 2;
-    const y = wall.y - wall.h / 2;
-    const g = this.trackWallObject(this.add.graphics().setDepth(-38));
-    g.fillStyle(0x05070b, 0.42).fillRect(x + 10, y + 10, wall.w, wall.h + WALL_HEIGHT);
-    g.fillStyle(0x111722, 1).fillRect(x, y, wall.w, wall.h);
-    g.fillStyle(0x202938, 1).fillRect(x, y - WALL_HEIGHT, wall.w, WALL_HEIGHT);
-    g.fillStyle(0x0b0f18, 1).fillRect(x, y + wall.h, wall.w, WALL_HEIGHT);
-    g.lineStyle(1, 0x344155, 0.72).strokeRect(x, y - WALL_HEIGHT, wall.w, wall.h + WALL_HEIGHT);
-    g.lineStyle(1, 0x6ee7ff, 0.12).lineBetween(x + 8, y - WALL_HEIGHT + 4, x + wall.w - 8, y - WALL_HEIGHT + 4);
-  }
-
-  private trackWallObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
-    this.wallObjects.push(obj);
-    return obj;
-  }
-
-  private trackStageObject<T extends Phaser.GameObjects.GameObject>(obj: T): T {
-    this.stageObjects.push(obj);
-    return obj;
-  }
-
-  private drawAdaptiveRouteMemory() {
-    if (!this.lastHotspot || this.waveLogs.length === 0) return;
-    const last = this.waveLogs[this.waveLogs.length - 1];
-    const quadrant = last ? this.dominantQuadrant(last) : 'NW';
-    const p = this.passableNear(this.lastHotspot, this.sectorLayout().exit);
-    const g = this.trackWallObject(this.add.graphics().setDepth(-37));
-    const pulse = 0.18 + Math.sin(this.time.now / 220) * 0.05;
-    g.lineStyle(1, 0xff2d2d, 0.24).strokeCircle(p.x, p.y, 52);
-    g.fillStyle(0xff2d2d, pulse).fillCircle(p.x, p.y, 34);
-    g.lineStyle(1, 0xe8e8ec, 0.18)
-      .lineBetween(p.x - 22, p.y, p.x + 22, p.y)
-      .lineBetween(p.x, p.y - 22, p.x, p.y + 22);
-    this.setSecurityLog(`이전 동선 분석: ${quadrant} 반복 이동 · 순찰 루트 재배치`, '#ff2d2d');
-  }
-
-  private setupExitZone() {
-    const p = this.sectorLayout().exit;
-    this.exitZone = new Phaser.Geom.Circle(p.x, p.y, EXIT_ZONE_RADIUS);
-    this.exitGraphics = this.trackStageObject(this.add.graphics().setDepth(-6));
-    this.drawExitZone();
-  }
-
-  private drawExitZone() {
-    if (!this.exitZone || !this.exitGraphics) return;
-    const pulse = 0.55 + Math.sin(this.time.now / 180) * 0.22;
-    this.exitGraphics.clear();
-    this.exitGraphics.fillStyle(0x6ee7ff, this.exitReached ? 0.18 : 0.09)
-      .fillCircle(this.exitZone.x, this.exitZone.y, EXIT_ZONE_RADIUS);
-    this.exitGraphics.lineStyle(2, this.exitReached ? 0xe8e8ec : 0x6ee7ff, this.exitReached ? 0.9 : pulse)
-      .strokeCircle(this.exitZone.x, this.exitZone.y, EXIT_ZONE_RADIUS);
-    this.exitGraphics.lineStyle(2, 0xe8e8ec, this.exitReached ? 0.8 : 0.42);
-    this.exitGraphics.lineBetween(this.exitZone.x - 12, this.exitZone.y, this.exitZone.x + 12, this.exitZone.y);
-    this.exitGraphics.lineBetween(this.exitZone.x + 6, this.exitZone.y - 7, this.exitZone.x + 14, this.exitZone.y);
-    this.exitGraphics.lineBetween(this.exitZone.x + 6, this.exitZone.y + 7, this.exitZone.x + 14, this.exitZone.y);
-    this.exitGraphics.fillStyle(0x0a0a0f, 0.78).fillRect(this.exitZone.x - 20, this.exitZone.y - 32, 40, 10);
-    this.exitGraphics.fillStyle(0x6ee7ff, this.exitReached ? 0.95 : 0.55).fillRect(this.exitZone.x - 16, this.exitZone.y - 30, 32, 4);
-  }
-
-  private showSceneCard(story: SectorStory) {
-    const x = this.scale.width / 2;
-    const card = this.add.rectangle(x, 92, 700, 78, 0x0e0e15, 0.94)
-      .setStrokeStyle(1, 0x343440)
-      .setDepth(HUD_DEPTH + 35);
-    const title = this.add.text(x, 72, story.title, {
-      fontFamily: 'monospace', fontSize: '15px', color: '#e8e8ec', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 36);
-    const line = this.add.text(x, 98, `"${story.directorLine}"`, {
-      fontFamily: 'monospace', fontSize: '12px', color: '#9a9aa8',
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 36);
-    this.tweens.add({
-      targets: [card, title, line],
-      alpha: 0,
-      delay: 1850,
-      duration: 280,
-      onComplete: () => {
-        card.destroy();
-        title.destroy();
-        line.destroy();
-      },
-    });
-  }
-
-  private setupSpotlight() {
-    const initial = this.currentWave === 2 ? SEARCHLIGHT_ROUTE_WAVE_2[0] : { x: this.scale.width / 2, y: this.scale.height / 2 };
-    this.spotlightCenter.set(initial.x, initial.y);
-    this.spotlight = this.trackStageObject(this.add.graphics().setDepth(-20));
-  }
-
-  private setupCameraFrame(shrinkRatio: number) {
-    const marginX = CAMERA_FRAME_MARGIN_X + this.scale.width * shrinkRatio;
-    const marginY = CAMERA_FRAME_MARGIN_Y + this.scale.height * shrinkRatio;
-    this.cameraFrame = new Phaser.Geom.Rectangle(
-      marginX, marginY,
-      this.scale.width - marginX * 2,
-      this.scale.height - marginY * 2,
-    );
-    const g = this.trackStageObject(this.add.graphics().setDepth(-15));
-    g.fillStyle(0x000000, 0.24);
-    g.fillRect(0, 0, this.scale.width, marginY);
-    g.fillRect(0, this.scale.height - marginY, this.scale.width, marginY);
-    g.fillRect(0, marginY, marginX, this.scale.height - marginY * 2);
-    g.fillRect(this.scale.width - marginX, marginY, marginX, this.scale.height - marginY * 2);
-    g.lineStyle(2, 0xe8e8ec, 0.42).strokeRect(
-      this.cameraFrame.x, this.cameraFrame.y, this.cameraFrame.width, this.cameraFrame.height,
-    );
-    g.lineStyle(2, 0xff2d2d, 0.75);
-    g.lineBetween(this.cameraFrame.x, this.cameraFrame.y, this.cameraFrame.x + 46, this.cameraFrame.y);
-    g.lineBetween(this.cameraFrame.right, this.cameraFrame.bottom, this.cameraFrame.right - 46, this.cameraFrame.bottom);
-  }
-
-  private setupPriorityTargets(forceElite = false) {
-    const enemies = (this.enemies.getChildren() as Enemy[]).filter((e) => e.active);
-    const sorted = enemies.sort((a, b) => {
-      const aScore = (a.elite ? 10 : 0) + (a.enemyType === 'shooter' ? 4 : a.enemyType === 'splitter' ? 2 : 0);
-      const bScore = (b.elite ? 10 : 0) + (b.enemyType === 'shooter' ? 4 : b.enemyType === 'splitter' ? 2 : 0);
-      return bScore - aScore;
-    });
-    const targets = sorted.slice(0, forceElite ? PRIORITY_TARGET_COUNT + 1 : PRIORITY_TARGET_COUNT);
-    for (const enemy of targets) {
-      this.priorityTargets.add(enemy);
-      enemy.setTint(ELITE_COLOR);
-    }
-    this.priorityRings = this.trackStageObject(this.add.graphics().setDepth(HUD_DEPTH - 3));
-  }
-
-  private updateStageRule(dt: number) {
-    switch (this.stageRule) {
-      case 'SEARCHLIGHT':
-        this.updateSpotlight(dt);
-        break;
-      case 'SURVEILLANCE_FRAME':
-      case 'FINAL_CORE':
-        this.tickCameraFrame(dt);
-        this.drawPriorityTargetRings();
-        break;
-      case 'PRIORITY_TARGETS':
-        this.drawPriorityTargetRings();
-        break;
-      case 'HOTSPOT_LOCKDOWN':
-      case 'NONE':
-        break;
-    }
-  }
-
-  private updateStealthSystems(dt: number) {
-    this.drawExitZone();
-    if (this.exitZone && !this.exitReached && this.exitZone.contains(this.player.x, this.player.y)) {
-      this.exitReached = true;
-      this.telemetry.recordExitReached();
-      this.detectionLevel = 0;
-      this.flashStageNote('EXIT ROUTE OPEN', '#6ee7ff');
-      this.checkWaveClear();
-    }
-
-    const seenBy = this.drawVisionCones();
-    if (seenBy) this.processVisionContact(seenBy, dt);
-    else {
-      this.detectionLevel = Math.max(0, this.detectionLevel - DETECTION_DECAY_PER_SEC * dt);
-      this.suspicionLevel = Math.max(0, this.suspicionLevel - SUSPICION_DECAY_PER_SEC * dt);
-      this.updateSecurityMood();
-    }
-    this.checkBodyDiscoveries();
-  }
-
-  private raiseSecurityNetwork(durationMs: number) {
-    const until = this.time.now + durationMs;
-    const enemies = this.enemies.getChildren() as Enemy[];
-    for (const enemy of enemies) {
-      if (enemy.active) enemy.forceAlertUntil(until);
-    }
-  }
-
-  private investigationPoint(): { x: number; y: number } | null {
-    if (this.lastKnownPlayer && this.time.now < this.investigationUntil) return this.lastKnownPlayer;
-    return null;
-  }
-
-  private setInvestigationPoint(point: { x: number; y: number }, durationMs = INVESTIGATION_HOLD_MS) {
-    const p = this.nearestPassablePoint(point.x, point.y, point);
-    this.lastKnownPlayer = new Phaser.Math.Vector2(p.x, p.y);
-    this.investigationUntil = Math.max(this.investigationUntil, this.time.now + durationMs);
-  }
-
-  private processVisionContact(spotter: SecuritySpotter, dt: number) {
-    this.telemetry.recordVisionExposure(dt);
-    this.setInvestigationPoint({ x: this.player.x, y: this.player.y });
-
-    const isSensor = !(spotter instanceof Enemy);
-    const sensorType = isSensor ? (spotter as SecuritySensor).type : null;
-    const buildRate = isSensor
-      ? (sensorType === 'relay' ? SENSOR_DETECTION_BUILD_PER_SEC * 1.18 : SENSOR_DETECTION_BUILD_PER_SEC)
-      : DETECTION_BUILD_PER_SEC;
-    const suspicionRate = sensorType === 'cctv' ? 0.72 : sensorType === 'relay' ? 0.9 : 0.62;
-    this.suspicionLevel = Math.min(1.2, this.suspicionLevel + suspicionRate * dt);
-
-    if (this.suspicionLevel >= SUSPICION_SEARCH_THRESHOLD) {
-      const duration = this.suspicionLevel >= SUSPICION_ALERT_THRESHOLD ? NETWORK_ALERT_MS : Math.floor(NETWORK_ALERT_MS * 0.7);
-      this.raiseSecurityNetwork(duration);
-    }
-    if (this.suspicionLevel >= SUSPICION_ALERT_THRESHOLD) {
-      this.detectionLevel = Math.min(1.35, this.detectionLevel + buildRate * dt);
-    } else {
-      this.detectionLevel = Math.min(0.74, this.detectionLevel + buildRate * dt * 0.38);
-    }
-
-    this.updateSecurityMood();
-    if (this.detectionLevel >= 1) {
-      this.detectionLevel = 0.62;
-      const applied = this.applyDamageToPlayer();
-      if (applied) this.telemetry.recordDamage(isSensor ? 'shooter' : (spotter as Enemy).enemyType);
-    }
-  }
-
-  private raiseNoiseInvestigation(point: { x: number; y: number }) {
-    this.detectionLevel = Math.min(1.15, this.detectionLevel + 0.12);
-    this.suspicionLevel = Math.min(1.05, this.suspicionLevel + 0.34);
-    this.setInvestigationPoint(point, INVESTIGATION_HOLD_MS + 650);
-    this.raiseSecurityNetwork(NOISE_ALERT_MS);
-    this.updateSecurityMood();
-    this.flashStageNote('NOISE BAIT / DRONES INVESTIGATING', '#f59e0b');
-    this.setSecurityLog('음향 변칙 감지: 드론·경비가 마지막 소음 지점을 확인한다', '#f59e0b');
-  }
-
-  private updateSecurityMood() {
-    const previous = this.securityMood;
-    if (this.detectionLevel >= 0.95 || this.suspicionLevel >= SUSPICION_ALERT_THRESHOLD) this.securityMood = 'alert';
-    else if (this.suspicionLevel >= SUSPICION_SEARCH_THRESHOLD || this.investigationPoint()) this.securityMood = 'searching';
-    else if (this.suspicionLevel > 0.05) this.securityMood = 'suspicious';
-    else this.securityMood = 'clear';
-
-    if (this.securityMood !== previous) {
-      const label = this.securityMood === 'clear' ? 'CLEAR' : this.securityMood === 'suspicious' ? 'SUSPICION' : this.securityMood === 'searching' ? 'SEARCHING LAST CONTACT' : 'LOCKDOWN ALERT';
-      const color = this.securityMood === 'alert' ? '#ff2d2d' : this.securityMood === 'clear' ? '#6ee7ff' : '#f59e0b';
-      this.setSecurityLog(`SECURITY ${label}`, color);
-    }
-  }
-
-  private setSecurityLog(text: string, color = '#f59e0b') {
-    this.securityLogText?.setText(text).setColor(color);
-    this.securityLogUntil = this.time.now + 2600;
-  }
-
-  private drawVisionCones(): SecuritySpotter | null {
-    this.visionGraphics.clear();
-    let spottedBy: Enemy | null = null;
-    const enemies = this.enemies.getChildren() as Enemy[];
-    for (const enemy of enemies) {
-      if (!enemy.active) continue;
-      const spec = this.visionSpec(enemy.enemyType);
-      const a = enemy.rotation;
-      const left = a - spec.fov / 2;
-      const right = a + spec.fov / 2;
-      const seen = this.playerInVision(enemy, spec.range, spec.fov);
-      if (seen) spottedBy = spottedBy ?? enemy;
-      const color = seen ? 0xff2d2d : spec.color;
-      const alpha = seen ? 0.23 : spec.alpha;
-      const p1 = this.rayEndBeforeWall(enemy.x, enemy.y, left, spec.range);
-      const p2 = this.rayEndBeforeWall(enemy.x, enemy.y, right, spec.range);
-      this.visionGraphics.fillStyle(color, alpha);
-      this.visionGraphics.fillTriangle(enemy.x, enemy.y, p1.x, p1.y, p2.x, p2.y);
-      this.visionGraphics.lineStyle(1, color, seen ? 0.72 : 0.28);
-      this.visionGraphics.lineBetween(enemy.x, enemy.y, p1.x, p1.y);
-      this.visionGraphics.lineBetween(enemy.x, enemy.y, p2.x, p2.y);
-    }
-    const sensorSpotted = this.drawSecuritySensorCones();
-    return spottedBy ?? sensorSpotted;
-  }
-
-  private drawSecuritySensorCones(): SecuritySensor | null {
-    let spotted: SecuritySensor | null = null;
-    for (const sensor of this.securitySensors) {
-      const angle = this.sensorAngle(sensor);
-      const seen = this.playerInSensorVision(sensor, angle);
-      if (seen) spotted = spotted ?? sensor;
-      const color = seen ? 0xff2d2d : sensor.color;
-      const alpha = seen ? 0.2 : sensor.type === 'relay' ? 0.065 : 0.085;
-      const left = angle - sensor.fov / 2;
-      const right = angle + sensor.fov / 2;
-      const p1 = this.rayEndBeforeWall(sensor.x, sensor.y, left, sensor.range);
-      const p2 = this.rayEndBeforeWall(sensor.x, sensor.y, right, sensor.range);
-      this.visionGraphics.fillStyle(color, alpha);
-      this.visionGraphics.fillTriangle(sensor.x, sensor.y, p1.x, p1.y, p2.x, p2.y);
-      this.visionGraphics.lineStyle(1, color, seen ? 0.66 : 0.22);
-      this.visionGraphics.lineBetween(sensor.x, sensor.y, p1.x, p1.y);
-      this.visionGraphics.lineBetween(sensor.x, sensor.y, p2.x, p2.y);
-    }
-    return spotted;
-  }
-
-  private sensorAngle(sensor: SecuritySensor): number {
-    return sensor.angle + Math.sin(this.time.now * sensor.speed + sensor.x * 0.01) * sensor.sweep;
-  }
-
-  private playerInSensorVision(sensor: SecuritySensor, angle: number): boolean {
-    if (this.time.now < this.waveEntryGraceUntil) return false;
-    const dx = this.player.x - sensor.x;
-    const dy = this.player.y - sensor.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > sensor.range) return false;
-    const target = Math.atan2(dy, dx);
-    if (Math.abs(Phaser.Math.Angle.Wrap(target - angle)) > sensor.fov / 2) return false;
-    return !this.segmentHitsWall(sensor.x, sensor.y, this.player.x, this.player.y);
-  }
-
-  private visionSpec(type: EnemyType): { range: number; fov: number; color: number; alpha: number } {
-    switch (type) {
-      case 'shooter':
-        return { range: 250, fov: Phaser.Math.DegToRad(58), color: 0x6ee7ff, alpha: 0.11 };
-      case 'splitter':
-        return { range: 170, fov: Phaser.Math.DegToRad(86), color: 0xf59e0b, alpha: 0.09 };
-      case 'chaser':
-      default:
-        return { range: 160, fov: Phaser.Math.DegToRad(74), color: 0xe8e8ec, alpha: 0.075 };
-    }
-  }
-
-  private playerInVision(enemy: Enemy, range: number, fov: number): boolean {
-    if (this.time.now < this.waveEntryGraceUntil) return false;
-    const dx = this.player.x - enemy.x;
-    const dy = this.player.y - enemy.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > range) return false;
-    const angle = Math.atan2(dy, dx);
-    if (Math.abs(Phaser.Math.Angle.Wrap(angle - enemy.rotation)) > fov / 2) return false;
-    return !this.segmentHitsWall(enemy.x, enemy.y, this.player.x, this.player.y);
-  }
-
-  private updateSpotlight(dt: number) {
-    const radius = this.currentWave === 2 ? 156 : 142;
-    const target = this.searchlightTarget();
-    this.spotlightCenter.lerp(new Phaser.Math.Vector2(target.x, target.y), this.currentWave === 2 ? 0.018 : 0.025);
-
-    const inside = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.spotlightCenter.x, this.spotlightCenter.y) <= radius;
-    if (inside) this.spotlightHoldSec = Math.min(SPOTLIGHT_HOLD_SEC, this.spotlightHoldSec + dt);
-    else this.tickStageDamage(dt);
-    if (this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC) this.checkWaveClear();
-
-    this.spotlight.clear();
-    this.spotlight.fillStyle(0xe8e8ec, 0.075).fillCircle(this.spotlightCenter.x, this.spotlightCenter.y, radius);
-    this.spotlight.lineStyle(2, inside ? 0xe8e8ec : 0xff2d2d, inside ? 0.55 : 0.9)
-      .strokeCircle(this.spotlightCenter.x, this.spotlightCenter.y, radius);
-    this.spotlight.lineStyle(1, 0xe8e8ec, 0.25)
-      .lineBetween(this.spotlightCenter.x - 18, this.spotlightCenter.y, this.spotlightCenter.x + 18, this.spotlightCenter.y)
-      .lineBetween(this.spotlightCenter.x, this.spotlightCenter.y - 18, this.spotlightCenter.x, this.spotlightCenter.y + 18);
-  }
-
-  private searchlightTarget(): { x: number; y: number } {
-    const t = (this.time.now - this.waveStartAt) / 1000;
-    if (this.currentWave !== 2) {
-      const globalT = this.time.now / 1000;
-      return {
-        x: this.scale.width / 2 + Math.cos(globalT * 0.58) * 190,
-        y: this.scale.height / 2 + Math.sin(globalT * 0.43) * 128,
-      };
-    }
-
-    const route = SEARCHLIGHT_ROUTE_WAVE_2;
-    const segment = Math.floor(t * 0.42) % route.length;
-    const next = (segment + 1) % route.length;
-    const local = (t * 0.42) % 1;
-    const eased = (1 - Math.cos(local * Math.PI)) / 2;
-    return {
-      x: Phaser.Math.Linear(route[segment].x, route[next].x, eased),
-      y: Phaser.Math.Linear(route[segment].y, route[next].y, eased),
-    };
-  }
-
-  private tickCameraFrame(dt: number) {
-    if (!this.cameraFrame) return;
-    const inside = this.cameraFrame.contains(this.player.x, this.player.y);
-    if (!inside) this.tickStageDamage(dt);
-    else this.stageRuleDamageAcc = 0;
-  }
-
-  private tickStageDamage(dt: number) {
-    this.stageRuleDamageAcc += STAGE_DAMAGE_DPS * dt;
-    while (this.stageRuleDamageAcc >= 1) {
-      this.stageRuleDamageAcc -= 1;
-      this.applyDamageToPlayer();
-    }
-  }
-
-  private drawPriorityTargetRings() {
-    if (!this.priorityRings) return;
-    this.priorityRings.clear();
-    this.priorityTargets.forEach((enemy) => {
-      if (!enemy.active) this.priorityTargets.delete(enemy);
-      else {
-        const pulse = 0.65 + Math.sin(this.time.now / 130) * 0.25;
-        this.priorityRings.lineStyle(2, 0xff2d2d, pulse)
-          .strokeCircle(enemy.x, enemy.y, Math.max(enemy.displayWidth, enemy.displayHeight) * 0.55 + 8);
-        this.priorityRings.lineStyle(1, 0xe8e8ec, 0.32)
-          .lineBetween(enemy.x - 18, enemy.y, enemy.x + 18, enemy.y)
-          .lineBetween(enemy.x, enemy.y - 18, enemy.x, enemy.y + 18);
-      }
-    });
-  }
-
-  private stageObjectiveComplete(): boolean {
-    if (this.stageRule === 'SEARCHLIGHT') return this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC;
-    return true;
-  }
-
-  private flashStageNote(text: string, color: string) {
-    const note = this.add.text(this.scale.width / 2, this.scale.height / 2 + 116, text, {
-      fontFamily: 'monospace', fontSize: '16px', color, fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 50);
-    this.tweens.add({
-      targets: note,
-      alpha: 0,
-      y: note.y - 18,
-      delay: 420,
-      duration: 500,
-      onComplete: () => note.destroy(),
-    });
   }
 
   /** onWaveCleared·onPlayerDied가 공유하는 웨이브 로그 스냅샷. finish()가 반환하는 damageSources/combat.kills는
@@ -1773,7 +446,6 @@ export class ArenaScene extends Phaser.Scene {
     if (this.prediction) this.prevHabit = this.prediction;
 
     this.prevMutation = this.activeMutation;
-    this.clearStageRule();
     clearMutation(this);
     waveClearSlowmo(this);
     playWaveClear();
@@ -1844,7 +516,6 @@ export class ArenaScene extends Phaser.Scene {
     // waveClearedEmitted가 true인 경로(인터벌 대기 중 사망)에서는 onWaveCleared가 이미 호출했으므로
     // 여기서는 no-op(state가 이미 null) — 방어적 호출이라 중복 호출도 안전하다.
     clearMutation(this);
-    this.clearStageRule();
     console.log('[ArenaScene] LOSE');
     this.time.delayedCall(LOSE_TRANSITION_DELAY_MS, () => this.endRun('LOSE'));
   };
@@ -1903,7 +574,7 @@ export class ArenaScene extends Phaser.Scene {
     add(this.add.text(cx, cy + 40, detail, {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8e8ec',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
-    add(this.add.text(cx, cy + 70, `DIRECTOR ${this.score.director}  :  탈옥자 ${this.score.player}`, {
+    add(this.add.text(cx, cy + 70, `디렉터 ${this.score.director}  :  당신 ${this.score.player}`, {
       fontFamily: 'monospace', fontSize: '16px', color: '#7a7a88',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
 
@@ -1917,78 +588,35 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   /** 아레나 경계 — 실플레이로 보니 벽이 어디인지 화면에 없어서 "허공에 뜬 도형"으로 읽혔다.
-   *  감옥 구역의 테두리이자 DIRECTOR가 재편집하는 보안 경계다.
+   *  무대의 테두리이자 디렉터의 것이라는 표시라, 무채색 격자 위에 레드 코너 마크를 얹는다.
    *  변주(용암·축소)가 이 위에 그려지도록 깊이는 바닥(-100)에 둔다. */
   private drawArenaFrame() {
     const { width: w, height: h } = this.scale;
     const g = this.add.graphics().setDepth(-100);
 
-    // 사선 보안 시설 바닥 격자 — 2.5D 공간감을 주는 참조선.
-    g.fillGradientStyle(0x0b1018, 0x0b1018, 0x080910, 0x080910, 1, 1, 1, 1);
-    g.fillRect(0, 0, w, h);
+    // 바닥 격자 — 이동이 눈에 잡히게 하는 참조선. 아주 어둡게 깔아 도형과 경쟁하지 않는다.
     g.lineStyle(1, 0x14141c, 1);
     for (let x = 120; x < w; x += 120) g.lineBetween(x, 0, x, h);
     for (let y = 120; y < h; y += 120) g.lineBetween(0, y, w, y);
-    g.lineStyle(1, 0x1b2d3a, 0.45);
-    for (let x = 60; x < w; x += 240) g.lineBetween(x, 0, x, h);
-    for (let y = 60; y < h; y += 240) g.lineBetween(0, y, w, y);
-    g.lineStyle(1, 0x223144, 0.32);
-    for (let x = -h; x < w; x += 120) g.lineBetween(x, h, x + h, 0);
-    g.lineStyle(1, 0x0f2631, 0.28);
-    for (let x = 0; x < w + h; x += 180) g.lineBetween(x, 0, x - h, h);
-
-    // 창고형 교도소 바닥: 지게차 동선, 적재 구획, 출입 제한선이 시설 목적을 먼저 읽히게 한다.
-    g.lineStyle(2, 0xf59e0b, 0.16);
-    for (let y = 128; y < h - 80; y += 160) {
-      g.lineBetween(64, y, w - 64, y);
-      for (let x = 84; x < w - 64; x += 56) g.lineBetween(x, y - 7, x + 18, y + 7);
-    }
-    g.lineStyle(1, 0x6ee7ff, 0.11);
-    for (let x = 96; x < w - 80; x += 192) {
-      g.strokeRect(x, 92, 112, 72);
-      g.strokeRect(x + 44, h - 174, 112, 72);
-    }
-    g.fillStyle(0xe8e8ec, 0.055);
-    for (let x = 120; x < w - 80; x += 240) {
-      g.fillRect(x, 42, 70, 4);
-      g.fillRect(x + 28, h - 46, 70, 4);
-    }
 
     // 경계선
     g.lineStyle(2, 0x23232e, 1).strokeRect(1, 1, w - 2, h - 2);
 
-    // 네 모서리의 레드 마크 — 이 구역이 DIRECTOR의 봉쇄 영역임을 상시 상기시킨다.
+    // 네 모서리의 레드 마크 — 무대가 디렉터의 것임을 상시 상기시킨다(전투 화면에 레드가 하나도 없었다)
     const L = 28;
     g.lineStyle(2, 0xff2d2d, 0.85);
     for (const [cx, cy, dx, dy] of [[1, 1, 1, 1], [w - 1, 1, -1, 1], [1, h - 1, 1, -1], [w - 1, h - 1, -1, -1]]) {
       g.lineBetween(cx, cy, cx + dx * L, cy);
       g.lineBetween(cx, cy, cx, cy + dy * L);
     }
-
-    this.add.text(w - 22, 14, 'LOCKDOWN', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#ff2d2d', fontStyle: 'bold',
-    }).setOrigin(1, 0).setDepth(HUD_DEPTH);
-    this.add.text(w - 22, 34, 'DIRECTOR WARDEN / BLOCK MAP', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#7a7a88',
-    }).setOrigin(1, 0).setDepth(HUD_DEPTH);
   }
 
   private createHud() {
     this.waveText = this.add
-      .text(16, 10, `SECTOR ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec', fontStyle: 'bold' })
-      .setDepth(HUD_DEPTH);
-    this.storyText = this.add
-      .text(16, 138, '', { fontFamily: 'monospace', fontSize: '12px', color: '#e8e8ec', fontStyle: 'bold' })
-      .setDepth(HUD_DEPTH);
-    this.objectiveText = this.add
-      .text(16, 156, '', { fontFamily: 'monospace', fontSize: '11px', color: '#7a7a88' })
-      .setDepth(HUD_DEPTH);
-    this.securityLogText = this.add
-      .text(16, 174, '', { fontFamily: 'monospace', fontSize: '10px', color: '#f59e0b' })
+      .text(16, 10, `웨이브 ${this.currentWave}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec' })
       .setDepth(HUD_DEPTH);
 
     this.dashGauge = this.add.graphics().setDepth(HUD_DEPTH);
-    this.attackGauge = this.add.graphics().setDepth(HUD_DEPTH);
     this.muteText = this.add
       .text(16, 80, '', { fontFamily: 'monospace', fontSize: '11px', color: '#3a3a46' })
       .setDepth(HUD_DEPTH);
@@ -2004,7 +632,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateHud() {
-    this.waveText.setText(`SECTOR ${this.currentWave}/${FINAL_WAVE}`);
+    this.waveText.setText(`웨이브 ${this.currentWave}`);
     this.syncHearts();
     for (let i = 0; i < this.hearts.length; i++) {
       this.hearts[i].setAlpha(i < this.player.hp ? 1 : 0.25);
@@ -2016,40 +644,8 @@ export class ArenaScene extends Phaser.Scene {
     const frac = this.player.dashReadyFraction(this.time.now);
     this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
 
-    this.attackGauge.clear();
-    this.attackGauge.fillStyle(0x2a2a33, 1).fillRect(x, y + 10, w, h);
-    const disruptFrac = this.player.disruptReadyFraction(this.time.now);
-    this.attackGauge.fillStyle(0xf59e0b, 0.92).fillRect(x, y + 10, w * disruptFrac, h);
-
-    this.muteText.setText(isMuted() ? '[M] 음소거 중 · [E/J] 교란' : '[M] 소리 켜짐 · [E/J] 교란');
-    if (this.securityLogText && this.time.now > this.securityLogUntil) this.securityLogText.setText('');
-    this.updateObjectiveText();
+    this.muteText.setText(isMuted() ? '[M] 음소거 중' : '[M] 소리 켜짐');
     this.updatePredictionMeter();
-  }
-
-  private updateObjectiveText() {
-    const story = this.sectorStory();
-    const exit = this.exitReached ? '출구 확보' : '출구로 이동';
-    const status = this.securityMood === 'clear'
-      ? ''
-      : this.securityMood === 'suspicious'
-        ? ` · 의심 ${(this.suspicionLevel * 100).toFixed(0)}%`
-        : this.securityMood === 'searching'
-          ? ' · 마지막 위치 수색'
-          : ` · 발각 ${(this.detectionLevel * 100).toFixed(0)}%`;
-    if (this.stageRule === 'SEARCHLIGHT') {
-      this.objectiveText.setText(`${story.objective}  ·  탐조등 ${this.spotlightHoldSec.toFixed(1)}/${SPOTLIGHT_HOLD_SEC}s  ·  ${exit}${status}`);
-      this.objectiveText.setColor(this.spotlightHoldSec >= SPOTLIGHT_HOLD_SEC ? '#e8e8ec' : '#9a9aa8');
-      return;
-    }
-    if (this.stageRule === 'PRIORITY_TARGETS' || this.stageRule === 'FINAL_CORE') {
-      const alive = [...this.priorityTargets].filter((e) => e.active).length;
-      this.objectiveText.setText(`${story.objective}  ·  감시 릴레이 ${alive}  ·  ${exit}${status}`);
-      this.objectiveText.setColor(alive === 0 ? '#e8e8ec' : '#ff2d2d');
-      return;
-    }
-    this.objectiveText.setText(`${story.objective}  ·  ${exit}${status}`);
-    this.objectiveText.setColor('#7a7a88');
   }
 
   /** 걸린 예측과 그 지표를 실시간으로 그린다. 임계선을 넘으면 빨강(디렉터가 맞는 중), 아래면 흰색.
@@ -2061,7 +657,7 @@ export class ArenaScene extends Phaser.Scene {
       // 잘 움직이는 플레이어에게는 이것 자체가 디렉터의 진술이고(읽을 게 없다), 그렇게 둬야
       // 깨끗한 런에서도 이 메커닉이 화면에 존재한다.
       this.predictionText
-        .setText(this.currentWave <= 1 ? 'DIRECTOR가 탈출 루트를 관찰하는 중' : '이번 구역에서 읽을 습관이 없다')
+        .setText(this.currentWave <= 1 ? '디렉터가 당신을 관찰하는 중' : '읽을 습관이 없다')
         .setColor('#3a3a46');
       return;
     }
@@ -2070,7 +666,7 @@ export class ArenaScene extends Phaser.Scene {
     const over = def.read(r) >= def.threshold;
 
     this.predictionText
-      .setText(`DIRECTOR 지시: "${def.claim}"  ${def.evidence(r)}`)
+      .setText(`"${def.claim}"  ${def.evidence(r)}`)
       .setColor(over ? '#ff2d2d' : '#7a7a88');
 
     const x = 16, y = 124, w = 160, h = 6;
@@ -2080,64 +676,6 @@ export class ArenaScene extends Phaser.Scene {
       .fillRect(x, y, Math.min(w, w * (meterFill(this.prediction, r) / 1.2)), h);
     // 임계선 — 이 눈금을 넘기면 디렉터가 맞는 것이다
     this.predictionMeter.fillStyle(0xe8e8ec, 1).fillRect(x + w / 1.2 - 1, y - 2, 2, h + 4);
-  }
-
-  private showOpeningSlate(onDone: () => void) {
-    const { width, height } = this.scale;
-    const objects: Phaser.GameObjects.GameObject[] = [];
-    const track = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
-      objects.push(o);
-      return o;
-    };
-
-    track(this.add.rectangle(width / 2, height / 2, width, height, 0x0a0a0f, 0.82).setDepth(HUD_DEPTH + 100));
-    track(this.add.rectangle(width / 2, height / 2, 650, 250, 0x0e0e15, 0.98).setStrokeStyle(2, 0xff2d2d).setDepth(HUD_DEPTH + 101));
-    track(this.add.text(width / 2, height / 2 - 82, 'PRISON BREAK / SECTOR 01', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ff2d2d', letterSpacing: 2,
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    track(this.add.text(width / 2, height / 2 - 32, 'AI 감옥의 보안 구역을 돌파하라', {
-      fontFamily: 'monospace', fontSize: '30px', color: '#e8e8ec', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    track(this.add.text(width / 2, height / 2 + 30, 'DIRECTOR는 네 탈출 습관을 기록한다. 숨는지, 싸우는지, 대시로 뚫는지, 같은 길을 반복하는지\n다음 보안 구역이 그 선택을 겨냥해 재설계된다.', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8', align: 'center', lineSpacing: 7,
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    const start = track(this.add.text(width / 2, height / 2 + 90, '클릭해서 구역 침투', {
-      fontFamily: 'monospace', fontSize: '16px', color: '#e8e8ec', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 102));
-    this.tweens.add({ targets: start, alpha: 0.35, duration: 520, yoyo: true, repeat: -1 });
-
-    const finish = () => {
-      this.input.off('pointerdown', finish);
-      this.tweens.killTweensOf(objects);
-      for (const o of objects) o.destroy();
-      onDone();
-    };
-    this.input.once('pointerdown', finish);
-  }
-
-  private showRuleBanner(d: Directive) {
-    const summary = [
-      d.mutation !== 'NONE' ? d.mutation : null,
-      d.buff !== 'NONE' ? d.buff : null,
-      d.deny !== 'NONE' ? `DENY ${d.deny}` : null,
-    ].filter(Boolean).join('  /  ') || 'BASELINE';
-    const y = 132;
-    const bar = this.add.rectangle(this.scale.width / 2, y, 560, 44, 0x0e0e15, 0.94)
-      .setStrokeStyle(1, 0xff2d2d)
-      .setDepth(HUD_DEPTH + 30);
-    const text = this.add.text(this.scale.width / 2, y, `SECURITY OVERRIDE · ${summary}`, {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ff2d2d', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(HUD_DEPTH + 31);
-    this.tweens.add({
-      targets: [bar, text],
-      alpha: 0,
-      delay: RULE_BANNER_MS,
-      duration: 260,
-      onComplete: () => {
-        bar.destroy();
-        text.destroy();
-      },
-    });
   }
 
   /** 하트 개수를 player.stats.maxHp에 맞춘다(Task 8: HP_PLUS로 최대 체력이 늘면 칸도 늘어난다).

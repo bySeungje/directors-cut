@@ -5,10 +5,10 @@ import type { ArenaScene } from './scenes/ArenaScene';
 import { clearBuff } from './buffs';
 
 // ── 브리프 명시 수치 (Task 6 브리프 mutation 효과표) ─────────────────────
-const LAVA_DPS_PER_SEC = 0.9; // 체류 피해를 올려 레드존이 실제 압박으로 느껴지게 한다.
-const FOG_RADIUS = 205;
+const LAVA_DPS_PER_SEC = 0.5; // 체류 1초당 HP 0.5 누적, 1 도달 시 피격 처리
+const FOG_RADIUS = 240;
 const FOG_ALPHA = 0.85;
-const SHRINK_RATIO = 0.18; // 아레나 경계 상하좌우 18%씩 축소
+const SHRINK_RATIO = 0.12; // 아레나 경계 상하좌우 12%씩 축소
 const SPEED_SURGE_MULT = 1.25; // 적 이속 +25%
 const HOTSPOT_RADIUS = 120;
 

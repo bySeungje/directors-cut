@@ -69,7 +69,7 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
   const onPlayerDiedDuringInterval = () => cleanup();
   scene.events.once('player-died', onPlayerDiedDuringInterval);
 
-  // ── 오버레이(정지된 보안 구역을 덮어 인터벌 모드임을 표시) + 상단 라벨 ────
+  // ── 오버레이(정지된 아레나를 덮어 인터벌 모드임을 표시) + 상단 라벨 ────
   track(
     scene.add
       .rectangle(scene.scale.width / 2, scene.scale.height / 2, scene.scale.width, scene.scale.height, BG_NUM, OVERLAY_ALPHA)
@@ -77,14 +77,14 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
   );
   track(
     scene.add
-      .text(scene.scale.width / 2, 60, `SECTOR ${scene.currentWave} CLEAR — 다음 보안 구역 재설계`, {
+      .text(scene.scale.width / 2, 60, `웨이브 ${scene.currentWave} 클리어 — 인터벌`, {
         fontFamily: 'monospace', fontSize: '15px', color: DIM_HEX,
       })
       .setOrigin(0.5)
       .setDepth(DEPTH_UI),
   );
 
-  // ── DIRECTOR 패널: 검정 박스 + 레드 보더 + 레드 D 뱃지 ──
+  // ── 디렉터 패널: 검정 박스 + 레드 보더 + 레드 D 뱃지 + DIRECTOR 라벨(시안 SCREEN 03) ──
   track(
     scene.add
       .rectangle(PANEL_X + PANEL_W / 2, PANEL_Y + PANEL_H / 2, PANEL_W, PANEL_H, BOARD_NUM)
@@ -105,7 +105,7 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
   const textWidth = PANEL_X + PANEL_W - textLeft - 24;
   track(
     scene.add
-      .text(textLeft, PANEL_Y + 24, 'DIRECTOR WARDEN', { fontFamily: 'monospace', fontSize: '12px', color: RED_HEX })
+      .text(textLeft, PANEL_Y + 24, 'DIRECTOR', { fontFamily: 'monospace', fontSize: '12px', color: RED_HEX })
       .setDepth(DEPTH_UI + 1),
   );
   const tauntText = track(
@@ -140,7 +140,7 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
 
     track(
       scene.add
-        .text(textLeft, PANEL_Y + 84, `재설계 의도 — ${directive.intent}`, {
+        .text(textLeft, PANEL_Y + 84, `설계 의도 — ${directive.intent}`, {
           fontFamily: 'monospace', fontSize: '13px', color: DIM_HEX, wordWrap: { width: textWidth },
         })
         .setDepth(DEPTH_UI + 1),
@@ -155,7 +155,7 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
   function showCards() {
     track(
       scene.add
-        .text(scene.scale.width / 2, SUBHEAD_Y, '다음 구역의 생존 방식을 하나 고른다', {
+        .text(scene.scale.width / 2, SUBHEAD_Y, '디렉터가 보는 앞에서, 하나를 고른다', {
           fontFamily: 'monospace', fontSize: '14px', color: DIM_HEX,
         })
         .setOrigin(0.5)
@@ -168,7 +168,7 @@ export function runInterval(scene: ArenaScene, directive: Directive, onDone: (pi
     if (scene.brokePrediction && directive.deny !== 'NONE') {
       track(
         scene.add
-          .text(scene.scale.width / 2, SUBHEAD_Y + 22, '예측을 깼다 — 이번 보안 봉인은 걸리지 않는다', {
+          .text(scene.scale.width / 2, SUBHEAD_Y + 22, '예측을 깼다 — 이번 봉인은 걸리지 않는다', {
             fontFamily: 'monospace', fontSize: '12px', color: RED_HEX,
           })
           .setOrigin(0.5)

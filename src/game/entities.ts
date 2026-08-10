@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
-import { buffedHp, buffedSpeed, buffedFireInterval, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
+import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
   damage: number; fireRateMs: number; moveSpeed: number; bulletSpeed: number;
@@ -22,18 +22,22 @@ export const BASE_STATS: PlayerStats = {
  * "따라잡혀서 아무것도 못 함"은 발생하지 않는다.
  */
 export const ENEMY_DEF: Record<EnemyType, { hp: number; speed: number; size: number }> = {
-  chaser:   { hp: 2, speed: 92, size: 14 },
-  shooter:  { hp: 3, speed: 54, size: 15 },
-  splitter: { hp: 3, speed: 66, size: 16 },
+  chaser:   { hp: 2, speed: 125, size: 14 },
+  shooter:  { hp: 3, speed: 60,  size: 15 },
+  splitter: { hp: 3, speed: 100, size: 16 },
 };
 
 // 적탄 이동속도 — 브리프에 수치 없음. 플레이어 기본 탄속(480)보다 느리게 잡아 회피 가능하게 함(재량 결정).
 /** 적 탄속. 220은 플레이어 이속과 **정확히 같아서**, 선행 조준을 넣어도 방향만 바꾸면 무조건 빠졌다.
  *  320이면 선행이 의미를 갖되 급선회로는 여전히 흘릴 수 있다(2026-08-08 재설계). */
-export const ENEMY_BULLET_SPEED = 360;
+export const ENEMY_BULLET_SPEED = 320;
 
+/** shooter 선행 조준 상한(초). 행동 카드의 INTERCEPT와 같은 사고 — 멀수록 더 앞을 보되 과예측은 막는다. */
+const SHOOTER_LEAD_MAX_SEC = 0.9;
+/** 선행 조준에 섞는 오차(rad). 완벽한 예측이 아니라 **페인트가 통하는 수준**이 설계 의도다. */
+const SHOOTER_AIM_JITTER_RAD = 0.10;
 
-// ── 비주얼 상수 (감옥 탈출 톤: 무채색 엔티티, 레드는 DIRECTOR/락다운 전용) ─────────
+// ── 비주얼 상수 (스펙 3.5: 무채색 엔티티, 레드는 디렉터/엘리트 전용) ─────────
 // PLAYER_COLOR/ENEMY_COLOR/ELITE_COLOR는 export도 한다 — juice.ts의 킬 파편·대시 잔상 틴트가
 // 여기 팔레트를 그대로 물려받아야 색이 갈라지지 않는다(Task 9).
 export const PLAYER_COLOR = 0xe8e8ec;
@@ -54,8 +58,8 @@ const ENEMY_TEX_SIZE: Record<EnemyType, number> = { chaser: 40, shooter: 46, spl
 
 const BULLET_PLAYER_TEX = 'bullet-player';
 const BULLET_ENEMY_TEX = 'bullet-enemy';
-const BULLET_PLAYER_TEX_SIZE = 18;
-const BULLET_PLAYER_RADIUS = 6;
+const BULLET_PLAYER_TEX_SIZE = 12;
+const BULLET_PLAYER_RADIUS = 4;
 const BULLET_ENEMY_TEX_SIZE = 14;
 const BULLET_ENEMY_RADIUS = 5;
 
@@ -63,44 +67,17 @@ export const HUD_HEART_TEX = 'hud-heart';
 const HUD_HEART_TEX_SIZE = 22;
 const HUD_HEART_RADIUS = 8;
 
-const SPRITE_PATH = 'assets/sprites';
-
-/** Phaser preload 단계에서 실제 스프라이트 SVG를 먼저 등록한다. generateTextures는 실패 시 fallback만 만든다. */
-export function preloadEntityTextures(scene: Phaser.Scene) {
-  scene.load.svg(PLAYER_TEX, `${SPRITE_PATH}/prisoner.svg`, { width: PLAYER_TEX_SIZE, height: PLAYER_TEX_SIZE });
-  scene.load.svg(ENEMY_TEX.chaser, `${SPRITE_PATH}/guard-robot.svg`, { width: ENEMY_TEX_SIZE.chaser, height: ENEMY_TEX_SIZE.chaser });
-  scene.load.svg(ENEMY_TEX.shooter, `${SPRITE_PATH}/surveillance-drone.svg`, { width: ENEMY_TEX_SIZE.shooter, height: ENEMY_TEX_SIZE.shooter });
-  scene.load.svg(ENEMY_TEX.splitter, `${SPRITE_PATH}/splitter-bot.svg`, { width: ENEMY_TEX_SIZE.splitter, height: ENEMY_TEX_SIZE.splitter });
-  scene.load.svg(BULLET_PLAYER_TEX, `${SPRITE_PATH}/emp-pulse.svg`, { width: BULLET_PLAYER_TEX_SIZE, height: BULLET_PLAYER_TEX_SIZE });
-  scene.load.svg(BULLET_ENEMY_TEX, `${SPRITE_PATH}/stun-pulse.svg`, { width: BULLET_ENEMY_TEX_SIZE, height: BULLET_ENEMY_TEX_SIZE });
-}
-
 // ── 튜닝 상수 (브리프 명시 수치) ────────────────────────────────────────
 const DASH_DURATION_MS = 300;
 const DASH_SPEED_MULT = 3;
 const HIT_INVULN_MS = 1000;
 const BLINK_INTERVAL_MS = 80;
 const MULTISHOT_SPREAD_DEG = 12;
+const SHOOTER_KEEP_DISTANCE = 260;
 const SHOOTER_FIRE_INTERVAL_MS = 1600;
+// shooter 거리유지 데드존 — 브리프에 수치 없음. 목표거리 근방에서 미세 진동(jitter) 방지용(재량 결정).
+const SHOOTER_DEADZONE = 15;
 const BULLET_LIFETIME_MS = 1500;
-const PATROL_POINT_EPS = 18;
-const PATROL_STUCK_MS = 720;
-const PURSUIT_STUCK_MS = 560;
-const GUARD_ALERT_MS = 1450;
-const GUARD_SIGHT_RANGE = 215;
-const GUARD_SIGHT_FOV = Phaser.Math.DegToRad(92);
-const RELAY_SIGHT_RANGE = 135;
-const RELAY_SIGHT_FOV = Phaser.Math.DegToRad(118);
-const DRONE_SIGHT_RANGE = 275;
-const DRONE_SIGHT_FOV = Phaser.Math.DegToRad(62);
-const DRONE_SCAN_SPEED = 0.0017;
-const RELAY_SCAN_SPEED = 0.0011;
-
-type PatrolPoint = { x: number; y: number };
-export interface EnemyBehaviorContext {
-  canSeePlayer?: (enemy: Enemy, range: number, fov: number) => boolean;
-  investigationPoint?: { x: number; y: number } | null;
-}
 
 // ── 텍스처 생성 (Graphics.generateTexture — 에셋 파일 0개) ────────────────
 
@@ -131,118 +108,61 @@ function drawHeart(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: nu
 export function generateTextures(scene: Phaser.Scene) {
   const g = scene.add.graphics();
 
-  // player: 후드 쓴 탈옥자 실루엣. 삼각 전면 노치를 없애 "드릴/미사일"처럼 읽히지 않게 한다.
-  if (!scene.textures.exists(PLAYER_TEX)) {
-    g.clear();
-    const c = PLAYER_TEX_SIZE / 2;
-    g.fillStyle(PLAYER_COLOR, 1);
-    g.fillRoundedRect(c - 8, c - 8, 16, 24, 6);
-    g.fillTriangle(c, c - 17, c - 12, c - 2, c + 12, c - 2);
-    g.fillRoundedRect(c - 12, c + 1, 24, 14, 5);
-    g.fillStyle(0x0a0a0f, 1);
-    g.fillCircle(c, c - 5, 7);
-    g.fillStyle(PLAYER_COLOR, 0.95);
-    g.fillCircle(c, c - 6, 4);
-    g.fillStyle(0x0a0a0f, 1);
-    g.fillRect(c - 5, c - 7, 10, 2);
-    g.lineStyle(2, 0xe8e8ec, 0.85);
-    g.lineBetween(c - 8, c + 11, c + 8, c + 11);
-    g.lineStyle(2, 0x0a0a0f, 0.95);
-    g.lineBetween(c - 6, c + 15, c - 6, c + 20);
-    g.lineBetween(c + 6, c + 15, c + 6, c + 20);
-    g.lineStyle(2, 0xe8e8ec, 0.65);
-    g.lineBetween(c - 13, c + 5, c - 18, c + 9);
-    g.lineBetween(c + 13, c + 5, c + 18, c + 9);
-    g.generateTexture(PLAYER_TEX, PLAYER_TEX_SIZE, PLAYER_TEX_SIZE);
-  }
+  // player: 원 + 조준 방향 노치(오른쪽 = rotation 0)
+  g.clear();
+  g.fillStyle(PLAYER_COLOR, 1);
+  g.fillCircle(PLAYER_TEX_SIZE / 2, PLAYER_TEX_SIZE / 2, PLAYER_RADIUS);
+  g.fillTriangle(
+    PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS + 7, PLAYER_TEX_SIZE / 2,
+    PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS - 2, PLAYER_TEX_SIZE / 2 - 6,
+    PLAYER_TEX_SIZE / 2 + PLAYER_RADIUS - 2, PLAYER_TEX_SIZE / 2 + 6,
+  );
+  g.generateTexture(PLAYER_TEX, PLAYER_TEX_SIZE, PLAYER_TEX_SIZE);
 
-  // chaser: 방패를 든 경비 로봇. 옆으로 튀어나온 전면 장갑을 줄여 탱크처럼 보이는 문제를 피한다.
-  if (!scene.textures.exists(ENEMY_TEX.chaser)) {
-    g.clear();
-    g.fillStyle(ENEMY_COLOR, 1);
+  // chaser: 삼각(오른쪽을 향함)
+  g.clear();
+  g.fillStyle(ENEMY_COLOR, 1);
+  {
     const s = ENEMY_DEF.chaser.size;
     const c = ENEMY_TEX_SIZE.chaser / 2;
-    g.fillRoundedRect(c - s * 0.72, c - s * 0.82, s * 1.44, s * 1.58, 4);
-    g.fillRoundedRect(c + s * 0.46, c - s * 0.42, s * 0.34, s * 0.84, 3);
-    g.fillStyle(0x0a0a0f, 1);
-    g.fillRect(c - s * 0.42, c - s * 0.42, s * 0.84, 3);
-    g.fillRect(c + s * 0.54, c - s * 0.22, s * 0.12, s * 0.44);
-    g.lineStyle(2, 0x0a0a0f, 0.85);
-    g.lineBetween(c - s * 0.42, c + s * 0.8, c - s * 0.42, c + s * 1.02);
-    g.lineBetween(c + s * 0.42, c + s * 0.8, c + s * 0.42, c + s * 1.02);
-    g.lineStyle(1, 0xe8e8ec, 0.45);
-    g.strokeRoundedRect(c + s * 0.46, c - s * 0.42, s * 0.34, s * 0.84, 3);
-    g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
+    g.fillTriangle(c + s, c, c - s * 0.7, c - s * 0.85, c - s * 0.7, c + s * 0.85);
   }
+  g.generateTexture(ENEMY_TEX.chaser, ENEMY_TEX_SIZE.chaser, ENEMY_TEX_SIZE.chaser);
 
-  // shooter: 감시 드론. 렌즈, 날개, 총구로 "카메라형 적"을 즉시 읽게 한다.
-  if (!scene.textures.exists(ENEMY_TEX.shooter)) {
-    g.clear();
-    g.fillStyle(ENEMY_COLOR, 1);
+  // shooter: 사각 + 작은 조준 노치(발사 방향을 읽을 수 있게 — 재량 결정)
+  g.clear();
+  g.fillStyle(ENEMY_COLOR, 1);
+  {
     const s = ENEMY_DEF.shooter.size;
     const c = ENEMY_TEX_SIZE.shooter / 2;
-    g.fillRoundedRect(c - s * 0.88, c - s * 0.72, s * 1.76, s * 1.44, 5);
-    g.fillRect(c - s * 1.26, c - 4, s * 0.38, 8);
-    g.fillRect(c + s * 0.88, c - 4, s * 0.38, 8);
-    g.fillStyle(0x0a0a0f, 1);
-    g.fillCircle(c, c, s * 0.48);
-    g.fillStyle(0x72d7ff, 0.8);
-    g.fillCircle(c, c, s * 0.23);
-    g.fillStyle(0xe8e8ec, 0.9);
-    g.fillCircle(c - 2, c - 2, 2);
-    g.fillStyle(ENEMY_COLOR, 1);
+    g.fillRect(c - s, c - s, s * 2, s * 2);
     g.fillTriangle(c + s + 6, c, c + s - 2, c - 5, c + s - 2, c + 5);
-    g.lineStyle(2, 0x0a0a0f, 0.9);
-    g.strokeRect(c - s * 0.68, c - s * 0.5, s * 1.36, s);
-    g.generateTexture(ENEMY_TEX.shooter, ENEMY_TEX_SIZE.shooter, ENEMY_TEX_SIZE.shooter);
   }
+  g.generateTexture(ENEMY_TEX.shooter, ENEMY_TEX_SIZE.shooter, ENEMY_TEX_SIZE.shooter);
 
-  // splitter: 균열 난 분열 보안 봇. 내부 절개선을 넣어 "죽으면 갈라진다"는 힌트를 준다.
-  if (!scene.textures.exists(ENEMY_TEX.splitter)) {
-    g.clear();
-    g.fillStyle(ENEMY_COLOR, 1);
-    const c = ENEMY_TEX_SIZE.splitter / 2;
-    const s = ENEMY_DEF.splitter.size;
-    drawHexagon(g, c, c, s);
-    g.lineStyle(2, 0x0a0a0f, 0.9);
-    g.lineBetween(c, c - s * 0.85, c, c + s * 0.85);
-    g.lineBetween(c - s * 0.7, c - s * 0.42, c + s * 0.7, c + s * 0.42);
-    g.lineBetween(c - s * 0.7, c + s * 0.42, c + s * 0.7, c - s * 0.42);
-    g.fillStyle(0xe8e8ec, 0.85);
-    g.fillCircle(c, c, 3);
-    g.generateTexture(ENEMY_TEX.splitter, ENEMY_TEX_SIZE.splitter, ENEMY_TEX_SIZE.splitter);
-  }
+  // splitter: 육각
+  g.clear();
+  g.fillStyle(ENEMY_COLOR, 1);
+  drawHexagon(g, ENEMY_TEX_SIZE.splitter / 2, ENEMY_TEX_SIZE.splitter / 2, ENEMY_DEF.splitter.size);
+  g.generateTexture(ENEMY_TEX.splitter, ENEMY_TEX_SIZE.splitter, ENEMY_TEX_SIZE.splitter);
 
-  // 플레이어 EMP 펄스 — 물리적 탄환/미사일이 아니라 보안 봇을 무력화하는 작은 링.
-  if (!scene.textures.exists(BULLET_PLAYER_TEX)) {
-    g.clear();
-    const c = BULLET_PLAYER_TEX_SIZE / 2;
-    g.lineStyle(2, 0x72d7ff, 0.95).strokeCircle(c, c, BULLET_PLAYER_RADIUS);
-    g.lineStyle(1, PLAYER_COLOR, 0.85).strokeCircle(c, c, BULLET_PLAYER_RADIUS - 3);
-    g.fillStyle(0x72d7ff, 0.75);
-    g.fillCircle(c, c, 2);
-    g.generateTexture(BULLET_PLAYER_TEX, BULLET_PLAYER_TEX_SIZE, BULLET_PLAYER_TEX_SIZE);
-  }
+  // 플레이어 탄
+  g.clear();
+  g.fillStyle(PLAYER_COLOR, 1);
+  g.fillCircle(BULLET_PLAYER_TEX_SIZE / 2, BULLET_PLAYER_TEX_SIZE / 2, BULLET_PLAYER_RADIUS);
+  g.generateTexture(BULLET_PLAYER_TEX, BULLET_PLAYER_TEX_SIZE, BULLET_PLAYER_TEX_SIZE);
 
-  // 적 보안 펄스 — 드론이 쏘는 비살상 스턴 신호.
-  if (!scene.textures.exists(BULLET_ENEMY_TEX)) {
-    g.clear();
-    const c = BULLET_ENEMY_TEX_SIZE / 2;
-    g.lineStyle(2, ENEMY_COLOR, 0.9);
-    g.lineBetween(c - 5, c, c + 5, c);
-    g.lineBetween(c, c - 5, c, c + 5);
-    g.fillStyle(ENEMY_COLOR, 0.9);
-    g.fillCircle(c, c, 3);
-    g.generateTexture(BULLET_ENEMY_TEX, BULLET_ENEMY_TEX_SIZE, BULLET_ENEMY_TEX_SIZE);
-  }
+  // 적탄 (마름모 — 사각형 shooter와 형태로 연결)
+  g.clear();
+  g.fillStyle(ENEMY_COLOR, 1);
+  drawDiamond(g, BULLET_ENEMY_TEX_SIZE / 2, BULLET_ENEMY_TEX_SIZE / 2, BULLET_ENEMY_RADIUS);
+  g.generateTexture(BULLET_ENEMY_TEX, BULLET_ENEMY_TEX_SIZE, BULLET_ENEMY_TEX_SIZE);
 
   // HUD 하트 (무채색 — HP는 디렉터 요소가 아니므로 레드 금지)
-  if (!scene.textures.exists(HUD_HEART_TEX)) {
-    g.clear();
-    g.fillStyle(PLAYER_COLOR, 1);
-    drawHeart(g, HUD_HEART_TEX_SIZE / 2, HUD_HEART_TEX_SIZE / 2, HUD_HEART_RADIUS);
-    g.generateTexture(HUD_HEART_TEX, HUD_HEART_TEX_SIZE, HUD_HEART_TEX_SIZE);
-  }
+  g.clear();
+  g.fillStyle(PLAYER_COLOR, 1);
+  drawHeart(g, HUD_HEART_TEX_SIZE / 2, HUD_HEART_TEX_SIZE / 2, HUD_HEART_RADIUS);
+  g.generateTexture(HUD_HEART_TEX, HUD_HEART_TEX_SIZE, HUD_HEART_TEX_SIZE);
 
   g.destroy();
 }
@@ -277,7 +197,7 @@ function computeMultishotAngles(center: number, n: number): number[] {
 type PlayerKeys = {
   W: Phaser.Input.Keyboard.Key; A: Phaser.Input.Keyboard.Key;
   S: Phaser.Input.Keyboard.Key; D: Phaser.Input.Keyboard.Key;
-  SPACE: Phaser.Input.Keyboard.Key; E: Phaser.Input.Keyboard.Key; J: Phaser.Input.Keyboard.Key;
+  SPACE: Phaser.Input.Keyboard.Key;
 };
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
@@ -304,7 +224,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setCollideWorldBounds(true);
     const off = PLAYER_TEX_SIZE / 2 - PLAYER_RADIUS;
     this.setCircle(PLAYER_RADIUS, off, off);
-    this.keys = scene.input.keyboard!.addKeys('W,A,S,D,SPACE,E,J') as unknown as PlayerKeys;
+    this.keys = scene.input.keyboard!.addKeys('W,A,S,D,SPACE') as unknown as PlayerKeys;
   }
 
   isInvulnerable(time: number): boolean {
@@ -334,12 +254,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return 1 - Phaser.Math.Clamp(remaining / this.stats.dashCooldownMs, 0, 1);
   }
 
-  disruptReadyFraction(time: number): number {
-    const elapsed = time - this.lastFireAt;
-    return Phaser.Math.Clamp(elapsed / this.stats.fireRateMs, 0, 1);
-  }
-
-  /** 이동·대시·시선·깜빡임 처리 후, 수동 긴급 교란 펄스 각도 목록을 반환 */
+  /** 이동·대시·조준·깜빡임 처리 후, 이번 프레임에 발사할 각도 목록(라디안)을 반환 */
   update(time: number, _delta: number, enemies: Phaser.Physics.Arcade.Group): number[] {
     this.handleMovement(time);
     this.handleDash(time);
@@ -348,10 +263,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const nearest = findNearestActiveEnemy(this.x, this.y, enemies);
     if (nearest) this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, nearest.x, nearest.y));
 
-    const wantsDisrupt = Phaser.Input.Keyboard.JustDown(this.keys.E) || Phaser.Input.Keyboard.JustDown(this.keys.J);
-    if (!wantsDisrupt || !nearest || time - this.lastFireAt < this.stats.fireRateMs) return [];
+    if (!nearest || time - this.lastFireAt < this.stats.fireRateMs) return [];
     this.lastFireAt = time;
-    return computeMultishotAngles(Phaser.Math.Angle.Between(this.x, this.y, nearest.x, nearest.y), this.stats.multishot);
+    return computeMultishotAngles(this.rotation, this.stats.multishot);
   }
 
   private handleMovement(time: number) {
@@ -399,14 +313,6 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   private moveSpeed = 0;
   private lastFireAt = 0;
-  private alertUntil = 0;
-  private patrolRoute: PatrolPoint[] = [];
-  private patrolIndex = 0;
-  private lastPatrolDistance = Infinity;
-  private patrolStuckSince = 0;
-  private lastMoveDistance = Infinity;
-  private moveStuckSince = 0;
-  private scanBaseAngle = 0;
   /** ENCIRCLE 포위 지점의 고유 각도 슬롯 — 황금각 분산으로 인접 스폰이 같은 방향을 잡지 않는다. */
   private slotAngle = 0;
   private static slotSeq = 0;
@@ -439,33 +345,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setAlpha(1);
 
     this.lastFireAt = this.scene.time.now;
-    this.alertUntil = 0;
-    this.patrolRoute = [];
-    this.patrolIndex = 0;
-    this.lastPatrolDistance = Infinity;
-    this.patrolStuckSince = 0;
-    this.lastMoveDistance = Infinity;
-    this.moveStuckSince = 0;
-    this.scanBaseAngle = this.slotAngle;
     this.setActive(true).setVisible(true);
     this.body.enable = true;
     this.body.setVelocity(0, 0);
-  }
-
-  setPatrolRoute(points: PatrolPoint[]) {
-    this.patrolRoute = points.map((p) => ({ x: p.x, y: p.y }));
-    this.patrolIndex = 0;
-    this.lastPatrolDistance = Infinity;
-    this.patrolStuckSince = 0;
-    this.lastMoveDistance = Infinity;
-    this.moveStuckSince = 0;
-    this.scanBaseAngle = this.patrolRoute.length > 1
-      ? Phaser.Math.Angle.Between(this.patrolRoute[0].x, this.patrolRoute[0].y, this.patrolRoute[1].x, this.patrolRoute[1].y)
-      : this.slotAngle;
-  }
-
-  forceAlertUntil(time: number) {
-    this.alertUntil = Math.max(this.alertUntil, time);
   }
 
   /** @returns 이 데미지로 사망하면 true */
@@ -479,99 +361,25 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     _delta: number,
     player: Player,
     fireEnemyBullet: (x: number, y: number, angle: number, sourceType: EnemyType) => void,
-    context: EnemyBehaviorContext = {},
   ) {
     if (!this.active) return;
 
     switch (this.enemyType) {
       case 'chaser':
-        this.updateGuard(time, player, context);
-        break;
       case 'splitter':
-        this.updateRelay(time, player, context);
+        // splitter 생존 중 이동 패턴은 브리프에 명시 없음 → chaser와 동일한 분기(재량 결정, 분열은 사망 시에만 고유)
+        if (isEvasive()) this.updateEvasive(time, player);
+        else if (isEncircle()) this.updateEncircle(time, player);
+        else if (isIntercept()) this.updateIntercept(player);
+        else this.scene.physics.moveToObject(this, player, this.moveSpeed);
+        this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
         break;
       case 'shooter':
-        this.updateShooter(time, player, fireEnemyBullet, context);
+        this.updateShooter(time, player, fireEnemyBullet);
         break;
     }
 
     if (this.elite) this.setAlpha(0.75 + 0.25 * Math.sin(time / 150)); // 발광 — 펄스로 구현(재량 결정)
-  }
-
-  private updateGuard(time: number, player: Player, context: EnemyBehaviorContext) {
-    const seesPlayer = context.canSeePlayer?.(this, GUARD_SIGHT_RANGE, GUARD_SIGHT_FOV) ?? true;
-    if (seesPlayer) this.alertUntil = time + GUARD_ALERT_MS;
-
-    if (time < this.alertUntil) {
-      const target = seesPlayer ? player : context.investigationPoint;
-      if (!target) {
-        this.updatePatrol(time, this.moveSpeed * 0.92);
-        return;
-      }
-      if (seesPlayer && isEvasive()) this.updateEvasive(time, player);
-      else if (seesPlayer && isEncircle()) this.updateEncircle(time, player);
-      else if (seesPlayer && isIntercept()) this.updateIntercept(player);
-      else this.moveTowardPoint(time, target, this.moveSpeed);
-      return;
-    }
-
-    this.updatePatrol(time, this.moveSpeed * 0.78);
-  }
-
-  private updateRelay(time: number, player: Player, context: EnemyBehaviorContext) {
-    const seesPlayer = context.canSeePlayer?.(this, RELAY_SIGHT_RANGE, RELAY_SIGHT_FOV) ?? false;
-    if (seesPlayer) {
-      this.alertUntil = time + GUARD_ALERT_MS * 0.75;
-      this.moveTowardPoint(time, player, this.moveSpeed * 0.72);
-      return;
-    }
-    if (time < this.alertUntil && context.investigationPoint) {
-      this.moveTowardPoint(time, context.investigationPoint, this.moveSpeed * 0.52);
-      return;
-    }
-
-    this.updatePatrol(time, this.moveSpeed * 0.45);
-    if (this.body.velocity.lengthSq() < 4) {
-      this.setRotation(this.scanBaseAngle + Math.sin(time * RELAY_SCAN_SPEED + this.slotAngle) * 0.95);
-    }
-  }
-
-  private updatePatrol(time: number, speed: number) {
-    if (this.patrolRoute.length === 0) {
-      this.body.setVelocity(0, 0);
-      this.setRotation(this.scanBaseAngle + Math.sin(time * RELAY_SCAN_SPEED + this.slotAngle) * 0.82);
-      return;
-    }
-
-    const target = this.patrolRoute[this.patrolIndex % this.patrolRoute.length];
-    const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-    if (dist < PATROL_POINT_EPS) {
-      this.advancePatrolPoint();
-      return;
-    }
-
-    const blocked = !this.body.blocked.none || !this.body.touching.none;
-    const improving = dist < this.lastPatrolDistance - 1.5;
-    if (improving || !blocked) {
-      this.lastPatrolDistance = dist;
-      if (!blocked) this.patrolStuckSince = 0;
-    } else if (blocked) {
-      if (this.patrolStuckSince === 0) this.patrolStuckSince = time;
-      if (time - this.patrolStuckSince >= PATROL_STUCK_MS) {
-        this.advancePatrolPoint();
-        return;
-      }
-    }
-
-    this.scene.physics.moveTo(this, target.x, target.y, speed);
-    this.setRotation(Math.atan2(this.body.velocity.y, this.body.velocity.x));
-  }
-
-  private advancePatrolPoint() {
-    this.patrolIndex = (this.patrolIndex + 1) % this.patrolRoute.length;
-    this.lastPatrolDistance = Infinity;
-    this.patrolStuckSince = 0;
-    this.body.setVelocity(0, 0);
   }
 
   /** 플레이어가 "가려는 곳"을 노린다. 방향을 급히 꺾으면 빗나간다 — 페인트가 통해야 한다(스펙 §3.4.2). */
@@ -623,49 +431,48 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     time: number,
     player: Player,
     fireEnemyBullet: (x: number, y: number, angle: number, sourceType: EnemyType) => void,
-    context: EnemyBehaviorContext,
   ) {
-    void fireEnemyBullet;
-    const seesPlayer = context.canSeePlayer?.(this, DRONE_SIGHT_RANGE, DRONE_SIGHT_FOV) ?? false;
+    const dist = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+    const angleToPlayer = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
+    const keep = buffedKeepDistance(SHOOTER_KEEP_DISTANCE);
 
-    if (seesPlayer) {
-      this.body.setVelocity(0, 0);
-      this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y));
-    } else if (time < this.alertUntil && context.investigationPoint) {
-      this.moveTowardPoint(time, context.investigationPoint, this.moveSpeed * 0.74);
+    if (dist < keep - SHOOTER_DEADZONE) {
+      this.scene.physics.velocityFromRotation(angleToPlayer + Math.PI, this.moveSpeed, this.body.velocity);
+    } else if (dist > keep + SHOOTER_DEADZONE) {
+      this.scene.physics.velocityFromRotation(angleToPlayer, this.moveSpeed, this.body.velocity);
+    } else if (isEvasive()) {
+      // 데드존 안에서도 좌우로 스트레이핑한다 — 정지 상태면 회피 카드의 의미가 없다
+      const dir = Math.sin(time / EVASIVE_PERIOD_MS + this.slotAngle) >= 0 ? 1 : -1;
+      this.scene.physics.velocityFromRotation(angleToPlayer + (Math.PI / 2) * dir, this.moveSpeed * 0.7, this.body.velocity);
     } else {
-      this.updatePatrol(time, this.moveSpeed * 0.86);
-      if (this.body.velocity.lengthSq() < 4) {
-        this.setRotation(this.scanBaseAngle + Math.sin(time * DRONE_SCAN_SPEED + this.slotAngle) * 1.1);
-      }
+      this.body.setVelocity(0, 0);
     }
+    this.setRotation(angleToPlayer);
 
-    if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) this.lastFireAt = time;
+    if (time - this.lastFireAt >= buffedFireInterval(SHOOTER_FIRE_INTERVAL_MS)) {
+      this.lastFireAt = time;
+      fireEnemyBullet(this.x, this.y, this.aimAngle(player, dist), 'shooter');
+    }
   }
 
-  private moveTowardPoint(time: number, target: PatrolPoint, speed: number) {
-    const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-    const blocked = !this.body.blocked.none || !this.body.touching.none;
-    const improving = dist < this.lastMoveDistance - 1.5;
-    if (improving || !blocked) {
-      this.lastMoveDistance = dist;
-      if (!blocked) this.moveStuckSince = 0;
-    } else if (blocked) {
-      if (this.moveStuckSince === 0) this.moveStuckSince = time;
-      if (time - this.moveStuckSince >= PURSUIT_STUCK_MS) {
-        const base = Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y);
-        const side = Math.sin(this.slotAngle) >= 0 ? 1 : -1;
-        const angle = base + side * Math.PI / 2;
-        this.scene.physics.velocityFromRotation(angle, speed * 0.72, this.body.velocity);
-        this.setRotation(angle);
-        return;
-      }
-    }
-
-    this.scene.physics.moveTo(this, target.x, target.y, speed);
-    this.setRotation(Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y));
+  /**
+   * 탄이 도착할 지점을 향해 쏜다.
+   *
+   * 기존에는 `angleToPlayer`(현재 위치)로 쐈다. 탄속이 플레이어 이속과 같아서, 260px 거리면 비행
+   * 1.18초 동안 플레이어가 260px를 이동하는데 판정 반경은 16px이다 — **빗나가는 게 아니라 조준이
+   * 성립하지 않았다.** 움직이기만 하면 shooter 전체가 무해했고, 그래서 7웨이브를 피격 1로 깰 수 있었다.
+   *
+   * 완벽한 요격은 만들지 않는다. 상한(0.9초)과 오차(±0.1rad)를 둬서 **급선회하면 빠지게** 한다 —
+   * 행동 카드 INTERCEPT와 같은 설계 의도다(스펙 §3.4.2 "페인트가 통하는 수준").
+   */
+  private aimAngle(player: Player, dist: number): number {
+    const speed = buffedBulletSpeed(ENEMY_BULLET_SPEED);
+    const lead = Math.min(dist / speed, SHOOTER_LEAD_MAX_SEC);
+    const px = Phaser.Math.Clamp(player.x + player.body.velocity.x * lead, 0, this.scene.scale.width);
+    const py = Phaser.Math.Clamp(player.y + player.body.velocity.y * lead, 0, this.scene.scale.height);
+    const jitter = (Math.random() - 0.5) * 2 * SHOOTER_AIM_JITTER_RAD;
+    return Phaser.Math.Angle.Between(this.x, this.y, px, py) + jitter;
   }
-
 }
 
 // ── Bullet ──────────────────────────────────────────────────────────────
