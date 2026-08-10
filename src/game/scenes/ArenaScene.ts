@@ -12,6 +12,7 @@ import {
 } from '../entities';
 import { runDirective } from '../waveRunner';
 import { nextMultiplier, killGain, MULT_START } from '../settlement';
+import { browserStore, saveRun, loadRuns, recallLine, type RunRecord } from '../memory';
 import {
   directionFromHotspot, directionAheadOfOrbit, warnKindFor, warnLine,
   sanitizeDirectiveForWarning, type WarnDirection, type WarnKind,
@@ -42,6 +43,9 @@ const WIN_TRANSITION_DELAY_MS = 600;
 const LOSE_TRANSITION_DELAY_MS = 500;
 /** 정산 표시를 읽을 시간. 기존 waveClearSlowmo(500ms)보다 길게 잡아 슬로모가 끝난 뒤에도 잠시 남는다. */
 const STAMP_HOLD_MS = 1300;
+/** 기억용 격자 — 텔레메트리 히트맵과 같은 8×6이라 "바로 여기"의 해상도가 사람 감각과 맞는다. */
+const MEM_COLS = 8, MEM_ROWS = 6;
+
 /** 관찰(원인)이 뜨고 예고(결과)가 붙기까지. */
 const OBSERVATION_TO_WARN_MS = 1200;
 /** 예고가 화면에 뜬 뒤 스폰 마커가 그려지기까지 — **아직 아무 일도 일어나지 않는 시간.** 소름의 자리다. */
@@ -124,6 +128,10 @@ export class ArenaScene extends Phaser.Scene {
   private multiplier = MULT_START;
   /** 런 누적 점수 — 처치마다 배수가 곱해져 즉시 오른다. */
   private runScore = 0;
+  /** 이 런에서 디렉터가 지목한 습관들 — 종료 시 로컬 기억에 남는다. */
+  private habitsThisRun: HabitId[] = [];
+  /** 이전 런들(이번 런 저장 전). 예고 비트에서 "3판째"를 말하는 데 쓴다. */
+  private priorRuns: RunRecord[] = [];
   /** 직전 판정이 BROKEN이면 그 라운드 디렉터의 봉인이 무효가 된다(인터벌이 읽는다). */
   brokePrediction = false;
   private predictionText!: Phaser.GameObjects.Text;
@@ -183,6 +191,8 @@ export class ArenaScene extends Phaser.Scene {
     this.score = { director: 0, player: 0 };
     this.multiplier = MULT_START;
     this.runScore = 0;
+    this.habitsThisRun = [];
+    this.priorRuns = loadRuns(browserStore());
     this.brokePrediction = false;
     this.warnDir = null;
     this.warnObservation = null;
@@ -645,7 +655,7 @@ export class ArenaScene extends Phaser.Scene {
     if (resolved) this.stampVerdict(resolved.habit, resolved.verdict, reading);
     // 다음 웨이브에 걸 예측 = 이번 웨이브의 지배 습관
     this.prediction = log.dominantHabit ?? null;
-    if (this.prediction) this.prevHabit = this.prediction;
+    if (this.prediction) { this.prevHabit = this.prediction; this.habitsThisRun.push(this.prediction); }
 
     // 예고 방향은 **엔진이 결정론으로** 정한다 — LLM이 죽어도 예고와 스폰의 인과가 유지된다(req-llm-fallback).
     // 위치 습관(한자리·한 구석)만 방향을 갖는다. 대시 습관은 방향이 없으므로 예고 없는 웨이브가 된다.
@@ -743,7 +753,22 @@ export class ArenaScene extends Phaser.Scene {
 
   /** 런 종료 — EndScene으로 전환하며 리포트 조립에 필요한 원재료(웨이브 로그·업그레이드 이력)를 넘긴다.
    *  배열은 복사본을 넘긴다 — EndScene이 들고 있는 동안 이 씬의 필드가 다음 런을 위해 리셋돼도 안전하게. */
+  /** 사망 지점의 격자 셀. 좌표가 아니라 셀이라 "바로 여기"가 사람 감각과 맞는다. 클리어면 null. */
+  private deathCellOf(result: 'WIN' | 'LOSE'): number | null {
+    if (result === 'WIN') return null;
+    const cx = Math.min(MEM_COLS - 1, Math.max(0, Math.floor((this.player.x / this.scale.width) * MEM_COLS)));
+    const cy = Math.min(MEM_ROWS - 1, Math.max(0, Math.floor((this.player.y / this.scale.height) * MEM_ROWS)));
+    return cy * MEM_COLS + cx;
+  }
+
   private endRun(result: 'WIN' | 'LOSE') {
+    // 로컬 기억 — 개인식별정보 0. 도달 웨이브·사망 셀·지목된 습관만 남긴다.
+    const cell = this.deathCellOf(result);
+    const runs = saveRun(browserStore(), {
+      wave: this.currentWave, deathCell: cell, habits: [...this.habitsThisRun], result,
+    });
+    const memory = recallLine(runs.slice(0, -1), cell, this.prevHabit); // 이번 런을 빼고 회수한다
+
     this.scene.start('EndScene', {
       result,
       waveLogs: [...this.waveLogs],
@@ -751,6 +776,8 @@ export class ArenaScene extends Phaser.Scene {
       verdictScore: { ...this.score },
       runScore: this.runScore,
       multiplier: this.multiplier,
+      memoryLine: memory,
+      runCount: runs.length,
     });
   }
 

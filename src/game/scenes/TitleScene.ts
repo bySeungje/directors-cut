@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { browserStore, loadRuns } from '../memory';
 import { resumeAudio } from '../sound';
 import { warmUpDirector } from '../../director/client';
 
@@ -36,6 +37,19 @@ export class TitleScene extends Phaser.Scene {
       .text(width / 2, height / 2 + 56, 'WASD 이동 · 마우스 조준 · 클릭 사격 · Space 대시', {
         fontFamily: 'monospace', fontSize: '14px', color: '#9a9aa8',
       })
+      .setOrigin(0.5);
+
+    // 기억 고지 — "플레이가 기록된다"를 숨기지 않는다. 숨기면 리스크지만 드러내면 컨셉이다.
+    // 개인식별정보는 저장하지 않으며 이 브라우저 안에만 남는다.
+    const prior = loadRuns(browserStore()).length;
+    this.add
+      .text(
+        width / 2, height / 2 + 92,
+        prior > 0
+          ? `${prior + 1}번째 도전  ·  나는 네 지난 판을 기억한다 (이 브라우저에만 저장)`
+          : '네 움직임은 이 브라우저에 기록된다',
+        { fontFamily: 'monospace', fontSize: '12px', color: prior > 0 ? '#ff2d2d' : '#3a3a46' },
+      )
       .setOrigin(0.5);
 
     this.input.once('pointerdown', () => {

@@ -13,6 +13,10 @@ export interface EndSceneData {
   runScore?: number;
   /** 종료 시점 배수. 예고를 몇 번 깼는지가 그대로 드러난다. */
   multiplier?: number;
+  /** 이 브라우저의 이전 런에서 회수한 기억 한 줄. 없으면 첫 판이거나 회수할 게 없다는 뜻. */
+  memoryLine?: string | null;
+  /** 이 브라우저에서 플레이한 총 런 수(이번 포함). */
+  runCount?: number;
 }
 
 // ── 색상 (시안 v1 CSS 변수 그대로: --board·--line·--red·--ink·--dim·--faint) ──
@@ -227,6 +231,18 @@ export class EndScene extends Phaser.Scene {
         .text(width / 2, STAT_Y - 4, `${rs.toLocaleString()}   최종 배수 ×${(mult ?? 1).toFixed(1)}`, {
           fontFamily: 'monospace', fontSize: '22px', fontStyle: 'bold',
           color: (mult ?? 1) > 1 ? RED_HEX : INK_HEX,
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_UI);
+    }
+
+    // 로컬 기억 — 이 게임이 "이 사람"을 읽는다는 것을 판 사이에서 잇는 유일한 줄이다.
+    // 없으면 아무것도 그리지 않는다(없는 기억을 지어내지 않는다).
+    const mem = this.sceneData?.memoryLine;
+    if (mem) {
+      this.add
+        .text(width / 2, STAT_Y + 48, mem, {
+          fontFamily: 'monospace', fontSize: '16px', color: RED_HEX, fontStyle: 'bold',
         })
         .setOrigin(0.5)
         .setDepth(DEPTH_UI);
