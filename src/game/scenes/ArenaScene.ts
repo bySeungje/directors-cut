@@ -11,6 +11,7 @@ import {
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
 import { runDirective } from '../waveRunner';
+import { nextMultiplier, killGain, MULT_START } from '../settlement';
 import {
   directionFromHotspot, directionAheadOfOrbit, warnKindFor, warnLine,
   sanitizeDirectiveForWarning, type WarnDirection, type WarnKind,
@@ -119,6 +120,10 @@ export class ArenaScene extends Phaser.Scene {
   private prevHabit: HabitId | null = null;
   /** 디렉터 : 당신 */
   private score = { director: 0, player: 0 };
+  /** 현재 배수. 예고를 깨면 오르고 적중당하면 내린다. */
+  private multiplier = MULT_START;
+  /** 런 누적 점수 — 처치마다 배수가 곱해져 즉시 오른다. */
+  private runScore = 0;
   /** 직전 판정이 BROKEN이면 그 라운드 디렉터의 봉인이 무효가 된다(인터벌이 읽는다). */
   brokePrediction = false;
   private predictionText!: Phaser.GameObjects.Text;
@@ -127,6 +132,7 @@ export class ArenaScene extends Phaser.Scene {
   private stampObjects: Phaser.GameObjects.GameObject[] = [];
 
   private waveText!: Phaser.GameObjects.Text;
+  private scoreText!: Phaser.GameObjects.Text;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
   private muteText!: Phaser.GameObjects.Text;
@@ -175,6 +181,8 @@ export class ArenaScene extends Phaser.Scene {
     this.prediction = null;
     this.prevHabit = null;
     this.score = { director: 0, player: 0 };
+    this.multiplier = MULT_START;
+    this.runScore = 0;
     this.brokePrediction = false;
     this.warnDir = null;
     this.warnObservation = null;
@@ -351,6 +359,8 @@ export class ArenaScene extends Phaser.Scene {
   private onEnemyDeath(enemy: Enemy) {
     this.telemetry.recordKill(enemy.enemyType);
     playKill();
+    // 정산은 여기서 일어난다 — 처치 즉시, 현재 배수로. 시차 0이라야 원인과 결과가 붙는다.
+    this.runScore += killGain(this.multiplier);
 
     const wasSplit = enemy.canSplit;
     const x = enemy.x, y = enemy.y;
@@ -499,6 +509,7 @@ export class ArenaScene extends Phaser.Scene {
     this.predictionText.setAlpha(a);
     this.predictionMeter.setAlpha(a);
     this.dashGauge.setAlpha(a);
+    this.scoreText.setAlpha(a);
     for (const heart of this.hearts) heart.setAlpha(a);
   }
 
@@ -616,6 +627,8 @@ export class ArenaScene extends Phaser.Scene {
     const verdict = judge(habit, reading, this.activeMutation);
     if (verdict === 'HIT') this.score.director++;
     else if (verdict === 'BROKEN') this.score.player++;
+    // 배수는 실력이 아니라 **읽기**에 붙는다. 잘 쏴서 오르지 않는다.
+    this.multiplier = nextMultiplier(this.multiplier, verdict);
     this.brokePrediction = verdict === 'BROKEN';
     this.prediction = null;
     return { habit, verdict };
@@ -736,6 +749,8 @@ export class ArenaScene extends Phaser.Scene {
       waveLogs: [...this.waveLogs],
       upgrades: [...this.chosenUpgrades],
       verdictScore: { ...this.score },
+      runScore: this.runScore,
+      multiplier: this.multiplier,
     });
   }
 
@@ -784,6 +799,14 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
     add(this.add.text(cx, cy + 70, `디렉터 ${this.score.director}  :  당신 ${this.score.player}`, {
       fontFamily: 'monospace', fontSize: '16px', color: '#7a7a88',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
+    // 정산 — 이 판정이 배수를 어디로 옮겼는지. 원인(판정)과 결과(배수)가 같은 화면에 있어야 정산이다.
+    const moved = verdict === 'BROKEN' ? `배수 ×${this.multiplier.toFixed(1)}  ▲`
+      : verdict === 'HIT' ? `배수 ×${this.multiplier.toFixed(1)}  ▼`
+      : `배수 ×${this.multiplier.toFixed(1)}`;
+    add(this.add.text(cx, cy + 98, moved, {
+      fontFamily: 'monospace', fontSize: '18px',
+      color: verdict === 'BROKEN' ? '#ff2d2d' : '#7a7a88', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(HUD_DEPTH + 60));
 
     this.stampObjects = objs;
@@ -835,12 +858,22 @@ export class ArenaScene extends Phaser.Scene {
       .text(16, 104, '', { fontFamily: 'monospace', fontSize: '12px', color: '#7a7a88' })
       .setDepth(HUD_DEPTH);
     this.predictionMeter = this.add.graphics().setDepth(HUD_DEPTH);
+    // 점수·배수 — 우상단. 전투 중 계속 세어지는 유일한 수치이고, 배수는 예고를 깼는지에만 반응한다.
+    this.scoreText = this.add
+      .text(this.scale.width - 16, 20, '', {
+        fontFamily: 'monospace', fontSize: '18px', color: '#e8e8ec', fontStyle: 'bold', align: 'right',
+      })
+      .setOrigin(1, 0).setDepth(HUD_DEPTH);
     this.syncHearts();
     this.updateHud();
   }
 
   private updateHud() {
     this.waveText.setText(`웨이브 ${this.currentWave}`);
+    const multTxt = `×${this.multiplier.toFixed(1)}`;
+    this.scoreText
+      .setText(`${this.runScore.toLocaleString()}   ${multTxt}`)
+      .setColor(this.multiplier > MULT_START ? '#ff2d2d' : '#e8e8ec');
     this.syncHearts();
     for (let i = 0; i < this.hearts.length; i++) {
       this.hearts[i].setAlpha(i < this.player.hp ? 1 : 0.25);

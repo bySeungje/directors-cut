@@ -9,6 +9,10 @@ export interface EndSceneData {
   /** 예측 판정 누계(디렉터 : 당신). 승패와는 별개 축이다 — 지면서 이길 수 있다.
    *  선택 필드로 둔다: 이 씬을 직접 띄우는 개발 경로가 있고, 없으면 스코어 줄만 생략된다. */
   verdictScore?: { director: number; player: number };
+  /** 런 누적 점수 — 처치마다 그 시점 배수가 곱해져 쌓인 값. */
+  runScore?: number;
+  /** 종료 시점 배수. 예고를 몇 번 깼는지가 그대로 드러난다. */
+  multiplier?: number;
 }
 
 // ── 색상 (시안 v1 CSS 변수 그대로: --board·--line·--red·--ink·--dim·--faint) ──
@@ -214,6 +218,19 @@ export class EndScene extends Phaser.Scene {
       )
       .setOrigin(0.5)
       .setDepth(DEPTH_UI);
+
+    // 최종 점수 — 배수가 붙은 값이라 "얼마나 잘 쐈나"가 아니라 "얼마나 읽었나"가 크게 반영된다.
+    const rs = this.sceneData?.runScore;
+    const mult = this.sceneData?.multiplier;
+    if (typeof rs === 'number') {
+      this.add
+        .text(width / 2, STAT_Y - 4, `${rs.toLocaleString()}   최종 배수 ×${(mult ?? 1).toFixed(1)}`, {
+          fontFamily: 'monospace', fontSize: '22px', fontStyle: 'bold',
+          color: (mult ?? 1) > 1 ? RED_HEX : INK_HEX,
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH_UI);
+    }
 
     // 읽기 대결 누계 — 승패와 별개 축이라 별도 줄로 둔다("지면서 이겼다"가 성립한다).
     const s = this.sceneData?.verdictScore;
