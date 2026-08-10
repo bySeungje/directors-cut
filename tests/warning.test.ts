@@ -5,7 +5,7 @@ import {
   type WarnDirection,
 } from '../src/game/warning';
 import { MUTATIONS, BUFF_CARDS, SPAWN_PATTERNS, type Directive } from '../src/contracts/directive';
-import { dominantEscape, escapeIndexOf, predictedPoint, strikeHits } from '../src/game/prediction';
+import { dominantEscape, escapeIndexOf, predictedPoint, strikeHits, feintIndex, decayEscape } from '../src/game/prediction';
 
 const base: Directive = {
   composition: [
@@ -184,5 +184,50 @@ describe('예측 타격 — 랜덤이 흉내 낼 수 없는 유일한 증거', (
     // 즉 멈춰 있어도 "너는 오른쪽으로 튄다"를 예고할 수 있다 — 선행 조준(물리)과 다른 점이다.
     expect(escapeIndexOf(0, 0)).toBe(null);
     expect(dominantEscape([9, 1, 1, 1, 1, 1, 1, 1])?.index).toBe(0);
+  });
+});
+
+describe('페인트 — 플레이어가 AI를 속이는 능동 수단', () => {
+  it('지배 방향의 정반대를 심는다 — 결과가 예측 가능해야 도구가 된다', () => {
+    expect(feintIndex(0)).toBe(4);  // 오른쪽 → 왼쪽
+    expect(feintIndex(2)).toBe(6);  // 아래 → 위
+    expect(feintIndex(6)).toBe(2);
+    expect(feintIndex(4)).toBe(0);
+  });
+
+  it('두 번 뒤집으면 제자리 — 정확히 반대여야 인과가 성립한다', () => {
+    for (let i = 0; i < 8; i++) expect(feintIndex(feintIndex(i))).toBe(i);
+  });
+
+  it('한 번의 페인트가 습관을 실제로 뒤집을 만큼 무겁다', () => {
+    // 오른쪽으로 굳어진 플레이어(9:1:1...)가 페인트를 0.8초 쓰면 가중치 3.5로 2.8이 왼쪽에 실린다.
+    // 그것만으로 지배 방향이 바뀌지는 않지만(9 > 2.8), 두세 번이면 뒤집힌다 —
+    // 한 번에 뒤집히면 AI의 읽기가 무의미해지고, 안 뒤집히면 도구가 아니다.
+    const bins = [9, 1, 1, 1, 1, 1, 1, 1];
+    const dom = dominantEscape(bins)!;
+    const flipped = [...bins];
+    for (let n = 0; n < 3; n++) flipped[feintIndex(dom.index)] += 0.8 * 3.5;
+    expect(dominantEscape(flipped)?.index).toBe(feintIndex(dom.index));
+  });
+});
+
+describe('예측 누적 감쇠 — 최근 행동만 읽는다', () => {
+  it('반감기만큼 지나면 절반이 된다', () => {
+    const bins = [8, 0, 0, 0, 0, 0, 0, 0];
+    decayEscape(bins, 6, 6);
+    expect(bins[0]).toBeCloseTo(4, 5);
+  });
+
+  it('행동을 바꾸면 지배 방향이 실제로 따라온다 — 반증 가능성의 전제', () => {
+    // 오른쪽으로 굳어진 상태에서 왼쪽으로 바꾸면, 감쇠 덕에 몇 초 안에 지배가 왼쪽으로 넘어간다.
+    const bins = [20, 0, 0, 0, 0, 0, 0, 0];
+    for (let t = 0; t < 12; t++) { decayEscape(bins, 1, 6); bins[4] += 1; }
+    expect(dominantEscape(bins)?.index).toBe(4);
+  });
+
+  it('감쇠가 없으면 바뀌지 않는다 — 이 테스트가 감쇠의 필요를 고정한다', () => {
+    const bins = [20, 0, 0, 0, 0, 0, 0, 0];
+    for (let t = 0; t < 12; t++) bins[4] += 1; // 감쇠 없이 같은 시간 왼쪽 이동
+    expect(dominantEscape(bins)?.index).toBe(0); // 여전히 오른쪽 — 행동을 바꿔도 안 읽힌다
   });
 });

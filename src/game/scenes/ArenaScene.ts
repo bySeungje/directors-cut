@@ -12,8 +12,8 @@ import {
 } from '../entities';
 import { canDamageEnforcer, enforcerPosition, CLOSE_RANGE_PX } from '../enforcerRule';
 import {
-  escapeIndexOf, dominantEscape, predictedPoint, strikeHits, ESCAPE_WORD,
-  TELEGRAPH_MS, STRIKE_RADIUS_PX,
+  escapeIndexOf, dominantEscape, predictedPoint, strikeHits, feintIndex, decayEscape, ESCAPE_WORD,
+  TELEGRAPH_MS, STRIKE_RADIUS_PX, FEINT_WEIGHT,
 } from '../prediction';
 import { runDirective } from '../waveRunner';
 import { nextMultiplier, killGain, chooseDeprivation, DEPRIVATION_WORD, MULT_START } from '../settlement';
@@ -163,6 +163,7 @@ export class ArenaScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private scoreText!: Phaser.GameObjects.Text;
   private deprivationText!: Phaser.GameObjects.Text;
+  private feintGauge!: Phaser.GameObjects.Graphics;
   private hearts: Phaser.GameObjects.Image[] = [];
   private dashGauge!: Phaser.GameObjects.Graphics;
   private muteText!: Phaser.GameObjects.Text;
@@ -181,6 +182,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyBullets = this.physics.add.group({ classType: Bullet, runChildUpdate: true });
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
+    this.player.onFeint = () => this.onFeint();
     this.player.onDash = () => {
       this.telemetry.recordDash();
       dashAfterimage(this, this.player, PLAYER_COLOR);
@@ -294,18 +296,45 @@ export class ArenaScene extends Phaser.Scene {
 
   /** 위협받는 동안 어느 쪽으로 튀는지 누적한다 — 예측 타격의 유일한 입력.
    *  가까운 적이 없으면 세지 않는다. 한가할 때의 이동은 도망이 아니라 그냥 이동이다. */
-  private trackEscape(dt: number) {
-    const enemies = this.enemies.getChildren() as Enemy[];
+  private nearestEnemyDistance(): number {
     let nearest = Infinity;
-    for (const e of enemies) {
+    for (const e of this.enemies.getChildren() as Enemy[]) {
       if (!e.active) continue;
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.x, e.y);
       if (d < nearest) nearest = d;
     }
-    if (nearest > THREAT_RADIUS_PX) return;
+    return nearest;
+  }
+
+  private trackEscape(dt: number) {
+    // 최근만 읽는다 — 감쇠가 없으면 후반에 습관이 굳어 행동을 바꿔도 예측이 안 바뀌고,
+    // 그러면 이 설계의 핵심인 반증 가능성이 죽는다.
+    decayEscape(this.escapeBins, dt);
+    // 페인트 중에는 **실제 이동과 무관하게 가짜 방향**이 기록된다 — 이것이 AI를 속이는 실행부다.
+    // 위협 조건도 무시한다: 페인트는 능동적 기만이라 한가할 때 걸어도 성립해야 도구가 된다.
+    if (this.time.now < this.player.feintUntil) {
+      const dom = dominantEscape(this.escapeBins);
+      if (dom) this.escapeBins[feintIndex(dom.index)] += dt * FEINT_WEIGHT;
+      return;
+    }
+    if (this.nearestEnemyDistance() > THREAT_RADIUS_PX) return;
     const v = this.player.body.velocity;
     const i = escapeIndexOf(v.x, v.y);
     if (i !== null) this.escapeBins[i] += dt;
+  }
+
+  /** 페인트 발동 연출 — 무엇을 하고 있는지 화면에서 읽혀야 도구가 된다. */
+  private onFeint() {
+    const ring = this.add.graphics().setDepth(HUD_DEPTH + 40);
+    ring.lineStyle(2, 0xe8e8ec, 0.9);
+    ring.strokeCircle(this.player.x, this.player.y, 30);
+    const t = this.add.text(this.player.x, this.player.y - 42, '페인트', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#e8e8ec', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 50);
+    this.tweens.add({
+      targets: [ring, t], alpha: 0, duration: 800,
+      onComplete: () => { ring.destroy(); t.destroy(); },
+    });
   }
 
   /**
@@ -323,6 +352,14 @@ export class ArenaScene extends Phaser.Scene {
     if (time < this.strikeReadyAt) return;
     const dom = dominantEscape(this.escapeBins);
     if (!dom) return; // 골고루 튀는 플레이어에게는 발동하지 않는다 — 없는 습관을 지어내지 않는다
+
+    // ⚠ **맥락 없이 쏘면 랜덤 장판으로 읽힌다.** 초기 구현은 7초마다 무조건 발동해서, 가만히 있거나
+    //   다른 쪽으로 가는 중에도 엉뚱한 자리에 표적이 떴다 — 승제 판정 "중간중간 예측은 너무 터무니없고".
+    //   읽기가 성립하려면 **플레이어가 그 습관을 실행하는 바로 그 순간**에 떠야 한다.
+    //   조건 둘: (1) 지금 실제로 그 방향으로 움직이는 중 (2) 위협받는 중(한가할 때의 이동은 도망이 아니다).
+    const v = this.player.body.velocity;
+    if (escapeIndexOf(v.x, v.y) !== dom.index) return;
+    if (this.nearestEnemyDistance() > THREAT_RADIUS_PX) return;
 
     this.strikeActive = true;
     this.strikeReadyAt = time + STRIKE_INTERVAL_MS;
@@ -722,6 +759,7 @@ export class ArenaScene extends Phaser.Scene {
     this.predictionText.setAlpha(a);
     this.predictionMeter.setAlpha(a);
     this.dashGauge.setAlpha(a);
+    this.feintGauge.setAlpha(a);
     this.scoreText.setAlpha(a);
     this.deprivationText.setAlpha(a);
     for (const heart of this.hearts) heart.setAlpha(a);
@@ -1118,6 +1156,7 @@ export class ArenaScene extends Phaser.Scene {
       })
       .setOrigin(1, 0).setDepth(HUD_DEPTH);
     // 박탈 표시 — 대시 게이지 옆. 디렉터가 가져간 것이 상시 보여야 "읽히면 잃는다"가 성립한다.
+    this.feintGauge = this.add.graphics().setDepth(HUD_DEPTH);
     this.enforcerRing = this.add.graphics().setDepth(-50); // 바닥 — 엔티티를 가리지 않는다
     this.deprivationText = this.add
       .text(124, 60, '', { fontFamily: 'monospace', fontSize: '12px', color: '#ff2d2d', fontStyle: 'bold' })
@@ -1149,6 +1188,13 @@ export class ArenaScene extends Phaser.Scene {
       const frac = this.player.dashReadyFraction(this.time.now);
       this.dashGauge.fillStyle(0xe8e8ec, 1).fillRect(x, y, w * frac, h);
     }
+    // 페인트 게이지 — 대시 아래. 능동 수단이 둘이라는 것이 화면에서 보여야 한다.
+    const fy = y + 12;
+    this.feintGauge.clear();
+    this.feintGauge.fillStyle(0x2a2a33, 1).fillRect(x, fy, w, h);
+    const ff = this.player.feintReadyFraction(this.time.now);
+    this.feintGauge.fillStyle(ff >= 1 ? 0x9a9aa8 : 0x4a4a55, 1).fillRect(x, fy, w * ff, h);
+
     // 무엇을 빼앗겼는지 — 게이지만으로는 대시 외의 박탈이 화면에 안 보인다.
     const taken = this.player.deprivation;
     this.deprivationText.setText(taken ? `${DEPRIVATION_WORD[taken]} 봉인` : '').setVisible(!!taken);

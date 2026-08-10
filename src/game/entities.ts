@@ -3,6 +3,7 @@ import { EnemyType } from '../contracts/directive';
 import { shouldFire } from './fireRule';
 import type { Deprivation } from './settlement';
 import { ENFORCER_HP } from './enforcerRule';
+import { FEINT_COOLDOWN_MS, FEINT_DURATION_MS } from './prediction';
 import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
@@ -202,7 +203,7 @@ function computeMultishotAngles(center: number, n: number): number[] {
 type PlayerKeys = {
   W: Phaser.Input.Keyboard.Key; A: Phaser.Input.Keyboard.Key;
   S: Phaser.Input.Keyboard.Key; D: Phaser.Input.Keyboard.Key;
-  SPACE: Phaser.Input.Keyboard.Key;
+  SPACE: Phaser.Input.Keyboard.Key; E: Phaser.Input.Keyboard.Key;
 };
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
@@ -229,7 +230,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setCollideWorldBounds(true);
     const off = PLAYER_TEX_SIZE / 2 - PLAYER_RADIUS;
     this.setCircle(PLAYER_RADIUS, off, off);
-    this.keys = scene.input.keyboard!.addKeys('W,A,S,D,SPACE') as unknown as PlayerKeys;
+    this.keys = scene.input.keyboard!.addKeys('W,A,S,D,SPACE,E') as unknown as PlayerKeys;
   }
 
   isInvulnerable(time: number): boolean {
@@ -250,6 +251,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const healedBy = Math.max(0, newStats.maxHp - this.stats.maxHp);
     this.stats = newStats;
     if (healedBy > 0) this.hp = Math.min(this.stats.maxHp, this.hp + healedBy);
+  }
+
+  /** 페인트가 발동한 시각(ms). 이 뒤 FEINT_DURATION_MS 동안 가짜 방향이 기록된다. */
+  feintUntil = 0;
+  /** 페인트를 다시 쓸 수 있는 시각(ms). */
+  feintReadyAt = 0;
+  /** 페인트 버튼이 눌렸을 때 씬에 알린다 — 가짜 방향은 씬의 텔레메트리가 심는다. */
+  onFeint?: () => void;
+
+  /** 0(직후)~1(사용 가능) — HUD 게이지용 */
+  feintReadyFraction(time: number): number {
+    if (time >= this.feintReadyAt) return 1;
+    return 1 - Phaser.Math.Clamp((this.feintReadyAt - time) / FEINT_COOLDOWN_MS, 0, 1);
   }
 
   /** 디렉터가 이번 웨이브 동안 가져간 능력. null이면 온전한 상태.
@@ -289,6 +303,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   update(time: number, _delta: number, _enemies: Phaser.Physics.Arcade.Group): number[] {
     this.handleMovement(time);
     this.handleDash(time);
+    this.handleFeint(time);
     this.handleBlink(time);
 
     const pointer = this.scene.input.activePointer;
@@ -318,6 +333,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dashInvulnUntil = time + DASH_DURATION_MS;
       this.onDash?.();
     }
+  }
+
+  /** 페인트 — 0.8초 동안 AI에게 **가짜 방향**을 흘린다. 대시(회피)와 달리 몸은 안 움직인다.
+   *  플레이어가 AI를 속이는 유일한 능동 수단이다. */
+  private handleFeint(time: number) {
+    if (!Phaser.Input.Keyboard.JustDown(this.keys.E) || time < this.feintReadyAt) return;
+    this.feintUntil = time + FEINT_DURATION_MS;
+    this.feintReadyAt = time + FEINT_COOLDOWN_MS;
+    this.onFeint?.();
   }
 
   private handleBlink(time: number) {

@@ -31,6 +31,14 @@ export const ESCAPE_WORD: readonly string[] = [
   '오른쪽', '오른쪽 아래', '아래', '왼쪽 아래', '왼쪽', '왼쪽 위', '위', '오른쪽 위',
 ];
 
+/** 누적 반감기(초) — **최근 행동만 읽는다.**
+ *
+ *  감쇠가 없으면 누적이 런 전체 평균이 되어, 후반에는 플레이어가 움직임을 바꿔도 예측이 바뀌지 않는다.
+ *  그러면 이 설계의 핵심인 **반증 가능성**이 죽는다(2026-08-10 실측: 24.5초 누적 뒤 페인트 5회로도
+ *  지배 방향이 안 바뀜). 습관 판정이 12초 롤링 창을 쓰는 것과 같은 이유다 —
+ *  `docs/_hub/nodes/C-duration-normalized-metrics.md`의 "길이가 아니라 행동을 재라"와 같은 계열. */
+export const ESCAPE_HALF_LIFE_SEC = 6;
+
 /** 이 비율 이상 한 방향으로 튀어야 "습관"이라고 부른다. 균등이면 12.5%이므로 그 두 배 이상. */
 export const ESCAPE_SHARE_MIN = 0.28;
 /** 판정에 필요한 최소 누적 시간(초). 이보다 적으면 데이터 없음이지 습관 아님이다
@@ -79,7 +87,36 @@ export function predictedPoint(
   };
 }
 
+/** 누적을 시간에 따라 감쇠시킨다 — 최근 행동이 무겁고 옛 행동은 잊힌다.
+ *  `bins`를 제자리에서 고친다(프레임마다 호출되므로 배열을 새로 만들지 않는다). */
+export function decayEscape(bins: number[], dt: number, halfLifeSec: number = ESCAPE_HALF_LIFE_SEC): void {
+  const f = Math.pow(0.5, dt / halfLifeSec);
+  for (let i = 0; i < bins.length; i++) bins[i] *= f;
+}
+
 /** 터진 자리에 플레이어가 있었는가. */
 export function strikeHits(px: number, py: number, tx: number, ty: number, radius: number = STRIKE_RADIUS_PX): boolean {
   return Math.hypot(px - tx, py - ty) <= radius;
+}
+
+/** 페인트 지속(ms) — 이 동안 텔레메트리에 **가짜 방향**이 기록된다. */
+export const FEINT_DURATION_MS = 800;
+/** 페인트 쿨다운(ms). 남발하면 AI의 읽기가 무의미해지고, 길면 능동적 도구로 안 느껴진다. */
+export const FEINT_COOLDOWN_MS = 5200;
+/** 페인트가 기록하는 가짜 방향의 가중치.
+ *  감쇠 적용 시 한 방향 포화값이 약 8.7이고 페인트 1회가 0.8초 × 6 = 4.8이므로,
+ *  **한 번이면 눈에 띄게 흔들리고 두 번이면 뒤집힌다**. 3.5에서는 다섯 번을 써도 안 뒤집혔다(실측). */
+export const FEINT_WEIGHT = 6;
+
+/**
+ * 페인트가 심는 가짜 방향 — **지배 습관의 정반대**.
+ *
+ * 왜 반대인가: 플레이어가 페인트를 쓰는 목적은 "AI가 읽은 그 방향을 무효화하는 것"이다.
+ * 무작위 방향을 심으면 결과가 예측 불가라 도구가 아니라 도박이 된다. 정반대를 심으면
+ * **한 번 쓰면 예고가 반대쪽에 뜬다**는 인과가 성립하고, 플레이어가 그것을 이용할 수 있다.
+ *
+ * 이것이 이 게임에서 "내가 AI를 읽었다"를 우연이 아니라 **능동적 행위**로 만드는 유일한 장치다.
+ */
+export function feintIndex(dominant: number): number {
+  return (dominant + 4) % 8;
 }
