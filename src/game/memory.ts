@@ -94,7 +94,9 @@ export function recallLine(runs: readonly RunRecord[], cell: number | null, habi
   const streak = habitStreak(runs, habit);
   if (streak >= 2 && habit) return `${streak}판째 같은 습관이다  (${HABIT_WORD[habit]})`;
 
-  if (runs.length >= 2) return `${runs.length}번째 도전이다. 나는 전부 기억한다`;
+  // 두 번째 판부터 말한다 — 심사자가 딱 두 판만 해도 이 기능이 화면에 존재해야 한다
+  // (2026-08-10 Playwright 실측: 문턱이 한 칸 높아 2판째에 아무것도 안 떴다).
+  if (runs.length >= 1) return `${runs.length + 1}번째 도전이다. 나는 전부 기억한다`;
   return null;
 }
 

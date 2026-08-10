@@ -81,7 +81,11 @@ describe('로컬 기억 — 무엇을 말하는가', () => {
 
   it('첫 판에는 아무것도 말하지 않는다 — 없는 기억을 지어내지 않는다', () => {
     expect(recallLine([], 5, 'CORNER')).toBe(null);
-    expect(recallLine([run({ deathCell: 9, habits: ['DASH'] })], 5, 'CORNER')).toBe(null);
+  });
+
+  it('두 번째 판부터는 반드시 무언가 말한다 — 심사자가 두 판만 해도 기능이 보여야 한다', () => {
+    const line = recallLine([run({ deathCell: 9, habits: ['DASH'] })], 5, 'CORNER');
+    expect(line).toContain('2번째 도전');
   });
 
   it('클리어로 끝난 런은 사망 자리 기억에 끼지 않는다', () => {
