@@ -14,7 +14,12 @@ import type { Verdict } from './habits';
  * Phaser를 import하지 않는다(habits.ts·fireRule.ts·warning.ts와 같은 이유).
  */
 
-export const MULT_START = 1.0;
+/** 시작 배수.
+ *
+ *  하한(1.0)에서 시작하면 적중당해도 배수가 안 움직여서, **심사자가 60초 플레이하는 동안 정산이
+ *  한 번도 보이지 않을 수 있다**(2026-08-10 Playwright 실측: 100초 동안 판정 1회, 배수 하한 고정).
+ *  하한에서 띄워 두면 웨이브 2의 첫 판정부터 양방향이 다 보인다 — 정산은 보여야 정산이다. */
+export const MULT_START = 1.5;
 export const MULT_ON_BROKEN = 0.5;
 export const MULT_ON_HIT = -0.3;
 export const MULT_MIN = 1.0;

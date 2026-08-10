@@ -34,7 +34,14 @@ describe('배수 정산', () => {
     let m = MULT_START;
     for (let i = 0; i < 6; i++) m = nextMultiplier(m, 'BROKEN'); // 웨이브 1은 관찰 라운드라 판정 6회
     expect(m).toBeLessThan(MULT_MAX);
-    expect(m).toBeCloseTo(4.0);
+  });
+
+  it('시작 배수가 하한보다 위다 — 아니면 첫 적중이 화면에서 아무 일도 아니게 된다', () => {
+    // Playwright 실측(2026-08-10): 하한에서 시작하니 100초 동안 배수가 한 번도 안 움직였다.
+    // 심사자가 60초만 플레이해도 정산이 양방향으로 보여야 한다.
+    expect(MULT_START).toBeGreaterThan(MULT_MIN);
+    expect(nextMultiplier(MULT_START, 'HIT')).toBeLessThan(MULT_START);
+    expect(nextMultiplier(MULT_START, 'BROKEN')).toBeGreaterThan(MULT_START);
   });
 
   it('처치 점수는 현재 배수에 비례한다 — 시차 0으로 즉시 오른다', () => {
