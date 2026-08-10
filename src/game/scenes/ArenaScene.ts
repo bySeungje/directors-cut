@@ -7,9 +7,10 @@ import {
   type HabitReading, type Verdict,
 } from '../habits';
 import {
-  Player, Enemy, Bullet, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures,
+  Player, Enemy, Bullet, Enforcer, ENEMY_DEF, ENEMY_BULLET_SPEED, HUD_HEART_TEX, generateTextures,
   PLAYER_COLOR, ENEMY_COLOR, ELITE_COLOR,
 } from '../entities';
+import { canDamageEnforcer, enforcerPosition, CLOSE_RANGE_PX } from '../enforcerRule';
 import { runDirective } from '../waveRunner';
 import { nextMultiplier, killGain, chooseDeprivation, DEPRIVATION_WORD, MULT_START } from '../settlement';
 import { browserStore, saveRun, loadRuns, recallLine, type RunRecord } from '../memory';
@@ -93,6 +94,9 @@ export class ArenaScene extends Phaser.Scene {
   private warnKind: WarnKind | null = null;
   private markerObjects: Phaser.GameObjects.GameObject[] = [];
   private firstObservationDone = false;
+  /** 예고한 자리에 선 집행자. 일반 적 그룹 밖이라 웨이브 클리어 조건에 끼지 않는다. */
+  private enforcer: Enforcer | null = null;
+  private enforcerRing!: Phaser.GameObjects.Graphics;
   /** Task 7이 채움 — 가장 최근 디렉티브가 LLM에서 왔는지(false면 폴백) (Task 8 로그 패널 소비) */
   lastDirectiveFromLLM = false;
   /** Task 8 로그 패널이 소비 — 가장 최근에 알려진 디렉티브(오프닝 포함). 인터벌 중엔 이미 다음 웨이브 몫으로 갱신된다. */
@@ -204,6 +208,7 @@ export class ArenaScene extends Phaser.Scene {
     this.warnObjects = [];
     this.markerObjects = [];
     this.firstObservationDone = false;
+    this.enforcer = null;
 
     this.createHud();
     attachDirectorLog(this);
@@ -250,6 +255,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     for (const angle of fireAngles) this.spawnPlayerBullet(angle);
 
+    this.updateEnforcer(time);
     this.maybeFirstObservation();
 
     const enemyList = this.enemies.getChildren() as Enemy[];
@@ -262,6 +268,17 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.playerDead && this.player.hp <= 0) this.handlePlayerDeath();
 
     this.updateHud();
+  }
+
+  /** 집행자 봉쇄 반경을 바닥에 그린다 — 안으로 들어와야 탄이 통한다는 것을 형태로 보여준다. */
+  private updateEnforcer(time: number) {
+    this.enforcerRing.clear();
+    const e = this.enforcer;
+    if (!e || !e.active) return;
+    e.pulse(time);
+    const inside = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.x, e.y) <= CLOSE_RANGE_PX;
+    this.enforcerRing.lineStyle(2, 0xff2d2d, inside ? 0.75 : 0.3);
+    this.enforcerRing.strokeCircle(e.x, e.y, CLOSE_RANGE_PX);
   }
 
   /** waveRunner가 웨이브의 마지막 스폰 배치를 디스패치한 직후 호출 — 그 전까지는 wave-clear 판정을 보류한다. */
@@ -454,9 +471,57 @@ export class ArenaScene extends Phaser.Scene {
         this.clearMarkers();
         // 웨이브 시계는 적이 실제로 나오는 순간부터 — 예고 대기 1.8초가 습관 지표를 희석하면 안 된다.
         this.waveStartAt = this.time.now;
+        this.spawnEnforcer(dir);
         runDirective(this, d);
       });
     });
+  }
+
+  /** 예고한 자리에 집행자를 세운다. 위치는 결정론(enforcerPosition)이라 예고와 어긋날 수 없다. */
+  private spawnEnforcer(dir: WarnDirection) {
+    this.clearEnforcer();
+    const { x, y } = enforcerPosition(dir, this.scale.width, this.scale.height);
+    const e = new Enforcer(this, x, y);
+    this.enforcer = e;
+    this.physics.add.overlap(this.playerBullets, e, this.handleBulletHitEnforcer, undefined, this);
+  }
+
+  private clearEnforcer() {
+    this.enforcerRing.clear();
+    this.enforcer?.destroy();
+    this.enforcer = null;
+  }
+
+  /** 원거리 탄은 튕긴다 — 이 게임에서 유일하게 "다가가야 하는" 규칙. */
+  private handleBulletHitEnforcer = (bulletObj: unknown, enfObj: unknown) => {
+    const bullet = bulletObj as Bullet;
+    const enf = enfObj as Enforcer;
+    if (!bullet.active || !enf.active || bullet.hit) return;
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, enf.x, enf.y);
+    bullet.hit = true;
+    bullet.hideAfterHit();
+    if (!canDamageEnforcer(dist)) {
+      // 튕김 — 왜 안 통하는지 형태로 알려준다(수치나 텍스트가 아니라 그림으로).
+      killBurst(this, bullet.x, bullet.y, 0x5a1a1a);
+      return;
+    }
+    if (enf.takeHit(bullet.damage)) this.onEnforcerBroken(enf);
+  };
+
+  /** 깼다 — 뺏긴 능력을 즉시 되찾고 배수가 오른다. 아레나에 끌어당기는 힘을 만드는 유일한 보상이다. */
+  private onEnforcerBroken(enf: Enforcer) {
+    const x = enf.x, y = enf.y;
+    const recovered = this.player.deprivation;
+    this.clearEnforcer();
+    killBurst(this, x, y, ELITE_COLOR);
+    playKill();
+    this.player.deprivation = null;
+    this.multiplier = Math.min(5, this.multiplier + 0.5);
+
+    const t = this.add.text(x, y - 40, recovered ? '되찾았다' : '집행자 파괴  배수 ▲', {
+      fontFamily: 'monospace', fontSize: '20px', color: '#e8e8ec', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(HUD_DEPTH + 60);
+    this.tweens.add({ targets: t, y: y - 80, alpha: 0, duration: 900, onComplete: () => t.destroy() });
   }
 
   /** 예고 — "그래서 왼쪽을 닫는다". 이 시점에 아직 아무 일도 일어나지 않는다.
@@ -686,6 +751,7 @@ export class ArenaScene extends Phaser.Scene {
     this.warnObservation = this.warnDir && this.prediction ? HABITS[this.prediction].evidence(reading) : null;
 
     this.prevMutation = this.activeMutation;
+    this.clearEnforcer(); // 웨이브가 끝나면 사라진다 — 무시하고 클리어하는 것이 정당한 선택이다
     clearMutation(this);
     waveClearSlowmo(this);
     playWaveClear();
@@ -913,6 +979,7 @@ export class ArenaScene extends Phaser.Scene {
       })
       .setOrigin(1, 0).setDepth(HUD_DEPTH);
     // 박탈 표시 — 대시 게이지 옆. 디렉터가 가져간 것이 상시 보여야 "읽히면 잃는다"가 성립한다.
+    this.enforcerRing = this.add.graphics().setDepth(-50); // 바닥 — 엔티티를 가리지 않는다
     this.deprivationText = this.add
       .text(124, 60, '', { fontFamily: 'monospace', fontSize: '12px', color: '#ff2d2d', fontStyle: 'bold' })
       .setDepth(HUD_DEPTH);

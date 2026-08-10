@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { EnemyType } from '../contracts/directive';
 import { shouldFire } from './fireRule';
 import type { Deprivation } from './settlement';
+import { ENFORCER_HP } from './enforcerRule';
 import { buffedHp, buffedSpeed, buffedFireInterval, buffedKeepDistance, buffedBulletSpeed, isIntercept, isEncircle, encircleRadius, encircleClosed, INTERCEPT_MAX_LEAD_SEC, isEvasive, EVASIVE_PERIOD_MS, EVASIVE_AMPLITUDE_RAD } from './buffs';
 
 export interface PlayerStats {
@@ -64,6 +65,10 @@ const BULLET_PLAYER_TEX_SIZE = 12;
 const BULLET_PLAYER_RADIUS = 4;
 const BULLET_ENEMY_TEX_SIZE = 14;
 const BULLET_ENEMY_RADIUS = 5;
+
+export const ENFORCER_TEX = 'enforcer';
+const ENFORCER_TEX_SIZE = 56;
+const ENFORCER_RADIUS = 20;
 
 export const HUD_HEART_TEX = 'hud-heart';
 const HUD_HEART_TEX_SIZE = 22;
@@ -159,6 +164,17 @@ export function generateTextures(scene: Phaser.Scene) {
   g.fillStyle(ENEMY_COLOR, 1);
   drawDiamond(g, BULLET_ENEMY_TEX_SIZE / 2, BULLET_ENEMY_TEX_SIZE / 2, BULLET_ENEMY_RADIUS);
   g.generateTexture(BULLET_ENEMY_TEX, BULLET_ENEMY_TEX_SIZE, BULLET_ENEMY_TEX_SIZE);
+
+  // 집행자 — 속이 빈 레드 사각(디렉터의 것이라 레드). 일반 적(무채색)과 한눈에 구분된다.
+  g.clear();
+  g.lineStyle(3, ELITE_COLOR, 1);
+  {
+    const c = ENFORCER_TEX_SIZE / 2, r = ENFORCER_RADIUS;
+    g.strokeRect(c - r, c - r, r * 2, r * 2);
+    g.lineStyle(2, ELITE_COLOR, 0.6);
+    g.strokeRect(c - r * 0.5, c - r * 0.5, r, r);
+  }
+  g.generateTexture(ENFORCER_TEX, ENFORCER_TEX_SIZE, ENFORCER_TEX_SIZE);
 
   // HUD 하트 (무채색 — HP는 디렉터 요소가 아니므로 레드 금지)
   g.clear();
@@ -561,5 +577,41 @@ export class Bullet extends Phaser.Physics.Arcade.Sprite {
     this.onExpire = undefined;
     this.setActive(false).setVisible(false);
     this.body.enable = false;
+  }
+}
+
+
+// ── Enforcer ────────────────────────────────────────────────────────────
+
+/**
+ * 집행자 — 예고한 자리에 서서 그 구역을 봉쇄한다. 원거리 탄은 튕기고, 붙어야만 깨진다.
+ *
+ * **일반 적 그룹(`enemies`)에 넣지 않는다.** 넣으면 웨이브 클리어 조건에 끼어 "안 죽이면 안 끝나는"
+ * 숙제가 되고, 그것이 정확히 이 게임이 피하려는 시간 축내기다. 별도 존재라 무시하고 클리어할 수 있다.
+ */
+export class Enforcer extends Phaser.Physics.Arcade.Sprite {
+  declare body: Phaser.Physics.Arcade.Body;
+  hp = ENFORCER_HP;
+
+  constructor(scene: Phaser.Scene, x: number, y: number) {
+    super(scene, x, y, ENFORCER_TEX);
+    scene.add.existing(this);
+    scene.physics.add.existing(this);
+    this.setCircle(ENFORCER_RADIUS, ENFORCER_TEX_SIZE / 2 - ENFORCER_RADIUS, ENFORCER_TEX_SIZE / 2 - ENFORCER_RADIUS);
+    this.body.setImmovable(true);
+    this.body.moves = false; // 눌러앉는다 — 쫓아오지 않는다. 위협이 아니라 봉쇄다.
+    this.hp = ENFORCER_HP;
+  }
+
+  /** 맞았다. 죽으면 true. */
+  takeHit(damage: number): boolean {
+    this.hp -= damage;
+    this.setAlpha(0.55 + 0.45 * Math.max(0, this.hp / ENFORCER_HP));
+    return this.hp <= 0;
+  }
+
+  /** 봉쇄 반경 표시용 — 이 안에서만 탄이 통한다. */
+  pulse(time: number) {
+    this.setScale(1 + 0.04 * Math.sin(time / 260));
   }
 }
