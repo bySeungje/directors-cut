@@ -493,10 +493,13 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   /** 원거리 탄은 튕긴다 — 이 게임에서 유일하게 "다가가야 하는" 규칙. */
-  private handleBulletHitEnforcer = (bulletObj: unknown, enfObj: unknown) => {
-    const bullet = bulletObj as Bullet;
-    const enf = enfObj as Enforcer;
-    if (!bullet.active || !enf.active || bullet.hit) return;
+  private handleBulletHitEnforcer = (a: unknown, b: unknown) => {
+    // ⚠ Phaser는 **스프라이트 vs 그룹** 충돌에서 콜백 인자를 (스프라이트, 그룹아이템) 순서로 넘긴다
+    //   (`collideSpriteVsGroup`). 그룹을 첫 인자로 등록해도 순서가 뒤집히므로 위치로 가정하면 안 된다 —
+    //   실제로 이 가정 때문에 물리 단계에서 예외가 터져 update()가 통째로 죽고 게임이 멈췄다(2026-08-10).
+    const bullet = (a instanceof Bullet ? a : b) as Bullet | undefined;
+    const enf = (a instanceof Enforcer ? a : b) as Enforcer | undefined;
+    if (!bullet || !enf || !bullet.active || !enf.active || bullet.hit) return;
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, enf.x, enf.y);
     bullet.hit = true;
     bullet.hideAfterHit();
